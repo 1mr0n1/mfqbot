@@ -4,3 +4,4 @@ __pycache__/
 *.session
 *.session-journal
 userbot/state.json
+.DS_Store

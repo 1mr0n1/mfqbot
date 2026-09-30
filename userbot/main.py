@@ -85,10 +85,11 @@ def to_chat_messages(history) -> list[dict]:
     return messages
 
 
-def owner_recently_active(history) -> bool:
+def owner_quiet_in(history) -> float:
+    """Seconds until you've been silent in this chat for OWNER_ACTIVE_WINDOW (0 = you're not active)."""
     now = time.time()
-    return any(m.out and m.id not in our_ids and now - m.date.timestamp() < C.OWNER_ACTIVE_WINDOW
-               for m in history)
+    last_manual = max((m.date.timestamp() for m in history if m.out and m.id not in our_ids), default=0)
+    return max(last_manual + C.OWNER_ACTIVE_WINDOW - now, 0)
 
 
 def split_reply(reply: str) -> list[str]:
@@ -121,10 +122,15 @@ async def reply_flow(chat_id: int, contact: User):
     try:
         await asyncio.sleep(rand(C.DEBOUNCE) + rand(C.READ_DELAY))
 
-        history = await client.get_messages(chat_id, limit=C.CONTEXT_MESSAGES)
-        if owner_recently_active(history):
-            log.info("Chat %s: you're active here, staying quiet", chat_id)
-            return
+        # If you've been chatting here yourself, hold off until you've gone quiet, then re-check.
+        # (Your own new message in the chat cancels this task entirely.)
+        while True:
+            history = await client.get_messages(chat_id, limit=C.CONTEXT_MESSAGES)
+            wait = owner_quiet_in(history)
+            if not wait:
+                break
+            log.info("Chat %s: you're active here, holding off %.0fs", chat_id, wait)
+            await asyncio.sleep(wait + rand(C.READ_DELAY))
         await client.send_read_acknowledge(chat_id)
         await asyncio.sleep(rand(C.THINK_DELAY))
 
@@ -215,6 +221,19 @@ async def on_incoming(event):
     pending[event.chat_id] = asyncio.create_task(reply_flow(event.chat_id, sender))
 
 
+async def catch_up():
+    """On startup, answer recent unanswered messages in enabled chats (e.g. ones sent during a restart)."""
+    for chat_id in list(state.enabled):
+        if not state.is_active(chat_id, C.REPLY_MODE):
+            continue
+        last = (await client.get_messages(chat_id, limit=1) or [None])[0]
+        if last and not last.out and time.time() - last.date.timestamp() < C.IGNORE_OLDER_THAN:
+            contact = await last.get_sender()
+            if isinstance(contact, User) and not contact.bot:
+                log.info("Chat %s: catching up on unanswered message", chat_id)
+                pending[chat_id] = asyncio.create_task(reply_flow(chat_id, contact))
+
+
 async def main():
     global me
     await client.connect()
@@ -223,6 +242,7 @@ async def main():
     me = await client.get_me()
     log.info("Running as %s (@%s) | mode=%s | models=%s | paused=%s | enabled chats=%d",
              full_name(me), me.username, C.REPLY_MODE, C.MODELS, state.paused, len(state.enabled))
+    await catch_up()
     try:
         await client.run_until_disconnected()
     finally:
