@@ -35,6 +35,12 @@ MIN_MESSAGES = 150           # below this the profile is mostly noise
 EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF☀-➿\U0001F1E6-\U0001F1FF]")
 WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 URL_RE = re.compile(r"https?://\S+")
+# Messages with slurs are left out of learning so the userbot never repeats them to other people.
+SLUR_RE = re.compile(r"\bn[i1!]+gg(?:er|a|ah|az|as|ers|uh)s?\b|\bnibba\w*|\bниг+ер\w*|\bниг+а\b", re.I)
+
+
+def usable(text: str) -> bool:
+    return bool(text) and not SLUR_RE.search(text)
 
 
 def script_of(text: str) -> str:
@@ -77,7 +83,7 @@ async def collect(client: TelegramClient) -> tuple[list[str], Counter]:
             continue
         async for msg in client.iter_messages(entity, from_user="me", limit=MAX_PER_CHAT):
             text = URL_RE.sub("", msg.raw_text or "").strip()
-            if text and not text.startswith(".ai") and not msg.fwd_from \
+            if usable(text) and not text.startswith(".ai") and not msg.fwd_from \
                     and not state.sent_by_bot(entity.id, msg.id):
                 messages.append(text)
                 per_chat[entity.id] += 1
@@ -99,7 +105,8 @@ async def write_profile(messages: list[str], stats: dict) -> str:
     )
     async with httpx.AsyncClient(base_url=C.BACKEND_URL, timeout=600) as http:
         resp = await http.post("/complete", json={"messages": [{"role": "user", "content": prompt}],
-                                                  "models": C.MODELS})
+                                                  "models": C.MODELS, "max_tokens": 12000,
+                                                  "reasoning": True})
     resp.raise_for_status()
     return resp.json()["reply"]
 
@@ -114,11 +121,14 @@ async def main():
     print("Collecting your sent messages from private chats...")
     messages, per_chat = await collect(client)
     await client.disconnect()
+    await build_style(messages, compute_stats(messages, per_chat))
+
+
+async def build_style(messages: list[str], stats: dict):
+    """Shared by live-account learning and export import: saves stats, example bank and profile."""
     if len(messages) < MIN_MESSAGES:
         raise SystemExit(f"Only {len(messages)} of your messages found (need {MIN_MESSAGES}+) — "
                          "not enough to learn a style. Use an account you actually chat from.")
-
-    stats = compute_stats(messages, per_chat)
     C.STYLE_DIR.mkdir(exist_ok=True)
     (C.STYLE_DIR / "stats.json").write_text(json.dumps(stats, ensure_ascii=False, indent=2))
 

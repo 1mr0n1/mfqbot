@@ -6,3 +6,4 @@ __pycache__/
 userbot/state.json
 .DS_Store
 userbot/style/
+chat-histories/

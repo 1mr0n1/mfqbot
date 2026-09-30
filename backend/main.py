@@ -3,10 +3,10 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import storage
-from .config import MODELS, SYSTEM_PROMPT
+from .config import MAX_TOKENS, MODELS, SYSTEM_PROMPT
 from .llm import LLMError, complete
 
 logging.basicConfig(level=logging.INFO)
@@ -40,6 +40,8 @@ class CompleteRequest(BaseModel):
     messages: list[dict]
     system: str | None = None
     models: list[str] = list(MODELS)  # tried in order until one succeeds
+    max_tokens: int = Field(MAX_TOKENS, ge=1, le=16384)  # reasoning models spend part of this thinking
+    reasoning: bool = False  # let the model think first (slower; for analysis jobs, not chat replies)
 
 
 @app.get("/health")
@@ -97,7 +99,8 @@ async def complete_stateless(req: CompleteRequest):
     error = None
     for key in req.models:
         try:
-            return ChatResponse(reply=await complete(app.state.http, MODELS[key], messages), model=key)
+            reply = await complete(app.state.http, MODELS[key], messages, req.max_tokens, req.reasoning)
+            return ChatResponse(reply=reply, model=key)
         except LLMError as e:
             error = e
     raise HTTPException(503, str(error))

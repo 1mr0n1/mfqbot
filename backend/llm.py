@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 import httpx
 
@@ -15,9 +16,15 @@ class LLMError(Exception):
     pass
 
 
-async def complete(client: httpx.AsyncClient, model: dict, messages: list[dict]) -> str:
+THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.S)
+
+
+async def complete(client: httpx.AsyncClient, model: dict, messages: list[dict],
+                   max_tokens: int = MAX_TOKENS, reasoning: bool = False) -> str:
     provider = PROVIDERS[model["provider"]]
-    payload = {"model": model["id"], "messages": messages, "max_tokens": MAX_TOKENS}
+    payload = {"model": model["id"], "messages": messages, "max_tokens": max_tokens}
+    if not reasoning:
+        payload |= model.get("no_think", {})
     headers = {"Authorization": f"Bearer {provider['api_key']}"}
 
     for attempt, delay in enumerate([0, *RETRY_DELAYS], start=1):
@@ -40,9 +47,12 @@ async def complete(client: httpx.AsyncClient, model: dict, messages: list[dict])
                 continue
             raise LLMError("The model returned an error. Please try again or switch models.")
 
-        content = data["choices"][0]["message"].get("content")
+        choice = data["choices"][0]
+        if choice.get("finish_reason") == "length":
+            log.warning("%s hit max_tokens=%d — reply is truncated", model["id"], max_tokens)
+        content = THINK_RE.sub("", choice["message"].get("content") or "").strip()
         if content:
-            return content.strip()
+            return content
         log.warning("Empty completion (attempt %d)", attempt)
 
     raise LLMError("The model is busy right now. Please try again in a moment or switch models.")

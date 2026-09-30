@@ -61,6 +61,23 @@ if you wrote in the chat within the last 2 minutes, cancels its reply if you sta
 won't commit you to meetings/money/favors. Style is in `userbot/persona.md`, timing in `userbot/config.py`.
 `USERBOT_REPLY_MODE=all` replies in every private chat instead of only enabled ones.
 
+### Teaching it your texting style
+
+Either from a Telegram Desktop export (Chat → ⋮ → Export chat history → HTML) or from a live account:
+
+```bash
+.venv/bin/python -m userbot.import_export chat-histories "ImrOnO"   # folder of exports + your name in them
+.venv/bin/python -m userbot.learn_style [session]                    # live account (userbot stopped)
+```
+
+Only your own messages are learned from (forwards, links and messages containing slurs are skipped).
+This writes `userbot/style/` (profile + 400 real example messages, git-ignored); each reply includes the
+profile and 40 random examples. Re-run any time — the userbot picks it up without a restart.
+
+Guards: model reasoning is switched off for replies and any reply that looks like leaked reasoning is
+never sent; assistant-speak lines are dropped; "are you a bot?" always gets a fixed honest auto-reply
+and a heads-up in your Saved Messages.
+
 ⚠️ `userbot/account.session` gives full access to your account — never share or commit it.
 Telegram may restrict accounts that look automated; keep volumes low.
 

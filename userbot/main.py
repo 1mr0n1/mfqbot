@@ -93,8 +93,47 @@ def owner_quiet_in(history) -> float:
     return max(last_manual + C.OWNER_ACTIVE_WINDOW - now, 0)
 
 
+# Last line of defense: never send something that looks like the model's reasoning or instructions.
+LEAK_RE = re.compile(r"\b(the user|we need to|we must|the instruction|system prompt|as an ai|language model)\b"
+                     r"|\{(name|contact|style|now)\}", re.I)
+MAX_REPLY_CHARS = 700
+
+
+def looks_safe(reply: str) -> bool:
+    return len(reply) <= MAX_REPLY_CHARS and not LEAK_RE.search(reply)
+
+
+# Lines that make it sound like a customer-support bot get dropped.
+ASSISTANT_RE = re.compile(r"\b(assist|let me know if you need|anything else|how can i help|feel free|happy to help)\b",
+                          re.I)
+
+# Asking whether they're talking to a bot/AI gets an honest fixed answer — never left to the model.
+BOT_QUESTION_RE = re.compile(r"\b(bot|robot|ai|a\.i\.|chat ?gpt|gpt|neural|автоответчик|бот|робот|ии|нейросеть|"
+                             r"нейронка|чатгпт)\b", re.I)
+ADDRESSED_RE = re.compile(r"\?|\b(u|you|ur|r u|are|is this|ты|вы|тебя|это)\b", re.I)
+HONEST_REPLY = {
+    "cyrillic": "Я сейчас занят, это автоответ. Отвечу лично чуть позже",
+    "latin": "im busy rn, this is an auto-reply. ill answer personally later",
+}
+
+
+def asks_if_bot(history) -> bool:
+    """True if the other person's latest messages (since your last one) ask about a bot/AI."""
+    for msg in history:  # newest first
+        if msg.out:
+            return False
+        text = msg.raw_text or ""
+        if BOT_QUESTION_RE.search(text) and ADDRESSED_RE.search(text):
+            return True
+    return False
+
+
+def clean_reply(reply: str) -> str:
+    return "\n".join(line for line in reply.splitlines() if not ASSISTANT_RE.search(line)).strip()
+
+
 def split_reply(reply: str) -> list[str]:
-    parts = [p.strip() for p in re.split(r"\n\s*\n", reply) if p.strip()]
+    parts = [p.strip() for p in reply.splitlines() if p.strip()]
     if len(parts) > C.MAX_PARTS:
         parts = parts[:C.MAX_PARTS - 1] + ["\n".join(parts[C.MAX_PARTS - 1:])]
     return parts
@@ -151,9 +190,18 @@ async def reply_flow(chat_id: int, contact: User):
         await asyncio.sleep(rand(C.THINK_DELAY))
 
         started = time.monotonic()
-        async with client.action(chat_id, "typing"):
-            reply = await generate(history, contact)
+        if asks_if_bot(history):
+            last = next((m.raw_text for m in history if not m.out and m.raw_text), "")
+            reply = HONEST_REPLY["cyrillic" if re.search("[А-Яа-я]", last) else "latin"]
+            await client.send_message("me", f"🤖 {full_name(contact)} asked if they're talking to a bot — "
+                                            f"sent the honest auto-reply. You may want to answer yourself.")
+        else:
+            async with client.action(chat_id, "typing"):
+                reply = clean_reply(await generate(history, contact) or "")
         if not reply:
+            return
+        if not looks_safe(reply):
+            log.warning("Chat %s: blocked suspicious reply (%d chars): %r", chat_id, len(reply), reply[:200])
             return
         elapsed = time.monotonic() - started  # typing was already shown while generating
 

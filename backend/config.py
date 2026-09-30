@@ -17,9 +17,12 @@ PROVIDERS = {
 }
 
 # Key = short name the bot/users see; id = provider's model id.
+# no_think = extra payload that switches reasoning off (faster, and no risk of thoughts leaking into replies).
 MODELS = {
-    "qwen": {"provider": "openrouter", "id": "qwen/qwen3.8-27b:free", "name": "Qwen 3.8 27B"},
-    "nemotron": {"provider": "nvidia", "id": "nvidia/nemotron-3-super-120b-a12b", "name": "Nemotron 3 Super 120B"},
+    "qwen": {"provider": "openrouter", "id": "qwen/qwen3.8-27b:free", "name": "Qwen 3.8 27B",
+             "no_think": {"reasoning": {"enabled": False}}},
+    "nemotron": {"provider": "nvidia", "id": "nvidia/nemotron-3-super-120b-a12b", "name": "Nemotron 3 Super 120B",
+                 "no_think": {"chat_template_kwargs": {"enable_thinking": False}}},
 }
 DEFAULT_MODEL = "qwen"
 
