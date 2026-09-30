@@ -6,6 +6,7 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai status         — anywhere: show current state
 """
 import asyncio
+import json
 import logging
 import random
 import re
@@ -99,11 +100,26 @@ def split_reply(reply: str) -> list[str]:
     return parts
 
 
+def style_block() -> str:
+    """Learned style (see learn_style.py). Re-read every time so re-learning needs no restart."""
+    profile_path, examples_path = C.STYLE_DIR / "profile.md", C.STYLE_DIR / "examples.json"
+    if not profile_path.exists():
+        return ""
+    block = f"How {full_name(me)} texts — follow this closely, it matters more than the generic rules above:\n"
+    block += profile_path.read_text().strip() + "\n"
+    if examples_path.exists():
+        examples = json.loads(examples_path.read_text())
+        picks = random.sample(examples, min(C.STYLE_EXAMPLES, len(examples)))
+        block += ("\nReal messages they've sent (for style only — don't reuse their content):\n"
+                  + "\n".join(f"- {m.replace(chr(10), ' / ')}" for m in picks) + "\n")
+    return block
+
+
 async def generate(history, contact: User) -> str | None:
     messages = to_chat_messages(history)
     if not messages or messages[-1]["role"] != "user":
         return None
-    system = persona.format(name=full_name(me), contact=full_name(contact),
+    system = persona.format(name=full_name(me), contact=full_name(contact), style=style_block(),
                             now=datetime.now().strftime("%A %d %B %Y, %H:%M"))
     try:
         resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS})
@@ -149,6 +165,7 @@ async def reply_flow(chat_id: int, contact: User):
             our_texts.setdefault(chat_id, []).append(part)
             sent = await client.send_message(chat_id, part)
             our_ids.add(sent.id)
+            state.record_sent(chat_id, sent.id)
         log.info("Chat %s: replied (%d chars)", chat_id, len(reply))
     except asyncio.CancelledError:
         log.info("Chat %s: reply cancelled", chat_id)

@@ -12,6 +12,8 @@ API_HASH = os.environ["TELEGRAM_API_HASH"]
 SESSION_PATH = str(HERE / "account")  # Telethon appends .session — treat this file like a password
 STATE_PATH = HERE / "state.json"
 PERSONA_PATH = HERE / "persona.md"
+STYLE_DIR = HERE / "style"  # written by learn_style.py (your personal messages — git-ignored)
+STYLE_EXAMPLES = 40         # of your real messages shown to the model per reply
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 MODELS = [m.strip() for m in os.environ.get("USERBOT_MODELS", "nemotron,qwen").split(",") if m.strip()]
