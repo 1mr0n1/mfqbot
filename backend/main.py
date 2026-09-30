@@ -36,6 +36,12 @@ class ModelChoice(BaseModel):
     model: str
 
 
+class CompleteRequest(BaseModel):
+    messages: list[dict]
+    system: str | None = None
+    models: list[str] = list(MODELS)  # tried in order until one succeeds
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -78,6 +84,23 @@ async def chat(req: ChatRequest):
     storage.append_history(req.user_id, "user", req.message)
     storage.append_history(req.user_id, "assistant", reply)
     return ChatResponse(reply=reply, model=user.model)
+
+
+@app.post("/complete", response_model=ChatResponse)
+async def complete_stateless(req: CompleteRequest):
+    """Stateless completion: caller supplies the full context (used by the userbot)."""
+    unknown = [m for m in req.models if m not in MODELS]
+    if unknown or not req.models:
+        raise HTTPException(400, f"Unknown models: {unknown}. Choose from: {', '.join(MODELS)}")
+    messages = ([{"role": "system", "content": req.system}] if req.system else []) + req.messages
+
+    error = None
+    for key in req.models:
+        try:
+            return ChatResponse(reply=await complete(app.state.http, MODELS[key], messages), model=key)
+        except LLMError as e:
+            error = e
+    raise HTTPException(503, str(error))
 
 
 if __name__ == "__main__":

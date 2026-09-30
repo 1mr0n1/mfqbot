@@ -31,8 +31,38 @@ cp .env.example .env   # fill in OPENROUTER_API_KEY, NVIDIA_API_KEY, TELEGRAM_BO
 | GET/PUT | `/users/{id}/model` | get / set user's model |
 | DELETE | `/users/{id}/history` | clear history |
 | POST | `/chat` | `{user_id, message}` → `{reply, model}` |
+| POST | `/complete` | stateless: `{messages, system?, models[]}` → `{reply, model}`, tries models in order |
 
 Interactive docs: http://127.0.0.1:8000/docs
+
+## Userbot (replies from your own Telegram account)
+
+`userbot/` logs in as **your account** (Telethon) and replies in private chats like a human would:
+waits for the other person to finish typing, marks the chat read after a random delay, shows "typing…"
+for a time proportional to the reply length, and sometimes splits replies into several messages.
+Context is read from the real chat history, so your own manual messages are taken into account.
+
+```bash
+# fill TELEGRAM_API_ID / TELEGRAM_API_HASH in .env (from https://my.telegram.org)
+.venv/bin/python -m userbot.login   # once, interactive: phone, code, 2FA password
+.venv/bin/python -m userbot.main    # needs the backend running
+```
+
+Control it by typing these from your account (the command is deleted, confirmation goes to Saved Messages):
+
+| Command | Where | Effect |
+|---|---|---|
+| `.ai on` / `.ai off` | a private chat | enable / disable auto-replies there |
+| `.ai pause` / `.ai resume` | anywhere | stop / restart all auto-replies |
+| `.ai status` | anywhere | show state |
+
+Safety behaviour: private chats only (no groups/channels/bots/Telegram service messages), stays quiet
+if you wrote in the chat within the last 2 minutes, cancels its reply if you start replying yourself,
+won't commit you to meetings/money/favors. Style is in `userbot/persona.md`, timing in `userbot/config.py`.
+`USERBOT_REPLY_MODE=all` replies in every private chat instead of only enabled ones.
+
+⚠️ `userbot/account.session` gives full access to your account — never share or commit it.
+Telegram may restrict accounts that look automated; keep volumes low.
 
 ## Notes
 - Models and providers are configured in `backend/config.py` (`MODELS`, `PROVIDERS`). Any OpenAI-compatible provider can be added.
