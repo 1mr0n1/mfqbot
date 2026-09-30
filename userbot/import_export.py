@@ -1,6 +1,6 @@
 """Learn your texting style from Telegram Desktop chat exports (HTML) instead of a live account.
 
-  .venv/bin/python -m userbot.import_export "chat-histories" ImrOnO
+  .venv/bin/python -m userbot.import_export "chat-histories" "YourName"
 
 Scans every messages*.html under the folder, keeps only messages written by the given author name
 (forwarded messages skipped), and builds the same style files as learn_style.py. Other people's

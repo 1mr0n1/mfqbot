@@ -66,7 +66,7 @@ won't commit you to meetings/money/favors. Style is in `userbot/persona.md`, tim
 Either from a Telegram Desktop export (Chat → ⋮ → Export chat history → HTML) or from a live account:
 
 ```bash
-.venv/bin/python -m userbot.import_export chat-histories "ImrOnO"   # folder of exports + your name in them
+.venv/bin/python -m userbot.import_export chat-histories "YourName"   # folder of exports + your name as shown in them
 .venv/bin/python -m userbot.learn_style [session]                    # live account (userbot stopped)
 ```
 
