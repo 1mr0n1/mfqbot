@@ -157,7 +157,7 @@ def style_block() -> str:
 async def generate(history, contact: User) -> str | None:
     messages = to_chat_messages(history)
     if not messages or messages[-1]["role"] != "user":
-        return None
+        return ""  # nothing to answer (None means the backend failed)
     system = persona.format(name=full_name(me), contact=full_name(contact), style=style_block(),
                             now=datetime.now().strftime("%A %d %B %Y, %H:%M"))
     try:
@@ -196,8 +196,19 @@ async def reply_flow(chat_id: int, contact: User):
             await client.send_message("me", f"🤖 {full_name(contact)} asked if they're talking to a bot — "
                                             f"sent the honest auto-reply. You may want to answer yourself.")
         else:
-            async with client.action(chat_id, "typing"):
-                reply = clean_reply(await generate(history, contact) or "")
+            for attempt in range(C.GENERATE_RETRIES + 1):
+                if attempt:  # every model failed — come back later, like a busy person would
+                    delay = rand(C.RETRY_DELAY)
+                    log.info("Chat %s: models unavailable, retrying in %.0fs (%d/%d)",
+                             chat_id, delay, attempt, C.GENERATE_RETRIES)
+                    await asyncio.sleep(delay)
+                async with client.action(chat_id, "typing"):
+                    reply = await generate(history, contact)
+                if reply is not None:
+                    break
+            else:
+                log.warning("Chat %s: giving up, no model answered", chat_id)
+            reply = clean_reply(reply or "")
         if not reply:
             return
         if not looks_safe(reply):

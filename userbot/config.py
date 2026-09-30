@@ -27,6 +27,8 @@ TYPING_CHARS_PER_SEC = (5, 9)  # typing speed
 TYPING_LIMITS = (1.5, 20)      # min/max typing time per message
 BETWEEN_MESSAGES = (0.8, 3)    # pause between split messages
 MAX_PARTS = 3                  # max messages a reply is split into
+GENERATE_RETRIES = 3           # if every model fails, try again later this many times
+RETRY_DELAY = (45, 90)         # wait between those attempts
 
 CONTEXT_MESSAGES = 30          # how much chat history the model sees
 OWNER_ACTIVE_WINDOW = 120      # don't auto-reply if you personally wrote in the chat this recently
