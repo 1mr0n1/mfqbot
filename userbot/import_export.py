@@ -1,6 +1,7 @@
 """Learn your texting style from Telegram Desktop chat exports (HTML) instead of a live account.
 
   .venv/bin/python -m userbot.import_export "chat-histories" "YourName"
+  .venv/bin/python -m userbot.import_export "chat-histories" "YourName" ChatExport_A,ChatExport_B   # only these
 
 Scans every messages*.html under the folder, keeps only messages written by the given author name
 (forwarded messages skipped), and builds the same style files as learn_style.py. Other people's
@@ -20,6 +21,7 @@ from . import lang
 from .learn_style import URL_RE, build_style, compute_stats, usable
 
 MAX_PAIRS = 800
+PRIVATE_RE = re.compile(r"\d[\d\s\-()]{5,}\d|\d{5,}")  # phone numbers, card numbers, codes
 
 BLOCK_RE = re.compile(r'<div class="message (default clearfix(?: joined)?|service)" id="message\d+">')
 FROM_RE = re.compile(r'<div class="from_name">\s*(.*?)\s*</div>', re.S)
@@ -81,16 +83,18 @@ def exchange_pairs(dialog: list[dict], me: str) -> list[dict]:
     pairs = []
     for (a1, t1), (a2, t2) in zip(turns, turns[1:]):
         them, mine = "\n".join(t1[-3:]), "\n".join(t2[:3])
-        if a1 != me and a2 == me and len(them) <= 250 and len(mine) <= 250 and usable(them) and usable(mine):
+        if a1 != me and a2 == me and len(them) <= 250 and len(mine) <= 250 and usable(them) and usable(mine) \
+                and not PRIVATE_RE.search(them + " " + mine):
             pairs.append({"with": a1, "them": them, "me": mine, "lang": lang.detect(mine)})
     return pairs
 
 
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         raise SystemExit(__doc__)
     folder, me = Path(sys.argv[1]), sys.argv[2]
-    files = sorted(folder.rglob("messages*.html"))
+    only = set(sys.argv[3].split(",")) if len(sys.argv) == 4 else None  # e.g. just the chats with friends
+    files = sorted(f for f in folder.rglob("messages*.html") if not only or f.parent.name in only)
     if not files:
         raise SystemExit(f"No messages*.html found under {folder}")
 

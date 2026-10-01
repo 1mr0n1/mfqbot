@@ -120,6 +120,10 @@ Name, surname and photo are only changed by you (`.ai …` commands or `python -
   the machine) and answered like text.
 - **Quoting and typos** — it swipe-replies to a specific message when several were sent or the message is old;
   ~6% of casual messages go out with a typo that is then edited or fixed with a `*word`.
+- **Your punctuation** — measured from your own messages (how often you end with a period, use commas,
+  actually type the "?") and applied to every model-written reply; per person when they have a style file.
+- **Almost no emoji** — emoji are stripped from replies (`USERBOT_EMOJI_CHANCE` keeps one, rarely); reactions
+  are only 👍 or ❤.
 - **Evening summary** — a digest in Saved Messages at `USERBOT_SUMMARY_TIME` (`.ai summary` for one now).
 - **Groups** — replies only when someone @mentions you or replies to your message, quoting it; `.ai off` in a
   group switches that group off.

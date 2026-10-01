@@ -16,11 +16,10 @@ from pathlib import Path
 
 from . import config as C
 from . import lang
-from .import_export import burst_stats, exchange_pairs, parse_export
+from .import_export import PRIVATE_RE, burst_stats, exchange_pairs, parse_export
 from .learn_style import URL_RE, compute_stats, usable
 
 MAX_EXAMPLES, MAX_PAIRS = 800, 2000
-PRIVATE_RE = re.compile(r"\d[\d\s\-()]{5,}\d|\d{5,}")  # phone numbers, card numbers, codes
 
 
 def keep(text: str) -> bool:

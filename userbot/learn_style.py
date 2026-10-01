@@ -57,7 +57,9 @@ def compute_stats(messages: list[str], per_chat_counts: Counter) -> dict:
     emojis = Counter(e for m in messages for e in EMOJI_RE.findall(m))
     endings = Counter(m[-1] if not m[-1].isalnum() else "<letter/digit>" for m in messages)
     openers = Counter(WORD_RE.findall(m.lower())[0] for m in messages if WORD_RE.findall(m))
+    from . import punct
     return {
+        "punct": punct.measure(messages),
         "messages_analyzed": n,
         "chats_analyzed": len(per_chat_counts),
         "length_chars": {"median": lengths[n // 2], "p90": lengths[int(n * 0.9)], "max": lengths[-1]},
@@ -100,7 +102,8 @@ async def write_profile(messages: list[str], stats: dict) -> str:
         "typical words and phrases in it, how formal they are. Then cover: when they switch/mix languages, typical length and "
         "message-splitting, capitalization and punctuation habits, emoji/smiley habits (e.g. ')' smiles), "
         "slang, abbreviations and signature words/phrases (quote them literally), greetings and sign-offs, "
-        "how they agree/refuse/laugh, and overall tone. Only describe what the data shows; do not invent.\n\n"
+        "how they agree/refuse/laugh, and overall tone. Only describe what the data shows; do not invent, and never "
+        "list a word just to say it is absent. Do not include names or nicknames of people.\n\n"
         f"STATISTICS:\n{json.dumps(stats, ensure_ascii=False, indent=1)}\n\n"
         "MESSAGES (one per line):\n" + "\n".join(m.replace("\n", " / ") for m in sample)
     )

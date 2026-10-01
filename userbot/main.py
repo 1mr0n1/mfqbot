@@ -35,7 +35,7 @@ from telethon import TelegramClient, errors, events, functions
 from telethon.tl.types import ReactionEmoji, User
 
 from . import config as C
-from . import daylog, judge, lang, media, memory, pfp, quirks, rhythm, salam, voice
+from . import daylog, judge, lang, media, memory, pfp, punct, quirks, rhythm, salam, voice
 from . import trace
 from .autoprofile import bio_loop
 from .state import State
@@ -201,8 +201,23 @@ FAKE_TAG_RE = re.compile(r"\[(?!(?:sticker|gif|voice|video)\s)[^\]]*\]", re.I)  
 REPEAT_RE = re.compile(r"(.)\1{12,}")  # "YOOOOOOOOOOOOOO…" -> capped
 
 
+EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\u2190-\u21FF\uFE0F\u200D\u2764]+")
+
+
+def strip_emoji(line: str, keep_one: bool) -> str:
+    """Almost no emoji: remove them all, or (rarely) keep just the first one."""
+    if media.MEDIA_LINE_RE.match(line.strip()) or judge.parse_model_choice(line):
+        return line  # [sticker 😂] / [react 👍] are commands, not text
+    first = EMOJI_RE.search(line)
+    cleaned = EMOJI_RE.sub("", line)
+    if keep_one and first:
+        cleaned = cleaned.rstrip() + " " + first.group(0)[0]
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
 def clean_reply(reply: str) -> str:
     first = (me.first_name or "").strip() if me else ""
+    keep_one = random.random() < C.EMOJI_KEEP_CHANCE
     lines = []
     for line in reply.splitlines():
         if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line):
@@ -211,6 +226,7 @@ def clean_reply(reply: str) -> str:
         if first:  # drop a "Name:" speaker label
             line = re.sub(rf"^\s*{re.escape(first)}\s*:\s*", "", line, flags=re.I)
         line = REPEAT_RE.sub(lambda m: m.group(1) * 8, line).strip()
+        line = strip_emoji(line, keep_one)
         if line:
             lines.append(line)
     return "\n".join(lines)
@@ -279,6 +295,16 @@ def contact_style_block(path, incoming: str) -> str:
     block += (f"\nLanguage note: write your whole reply in {name}. Use only words and forms that appear in your "
               "real messages above; if unsure, answer with something very short.\n")
     return block
+
+
+def punct_profile(contact: User) -> dict:
+    """Your measured punctuation habits: with this person if they have a style file, otherwise in general."""
+    try:
+        path = contact_style_path(contact)
+        stats = json.loads(path.read_text())["stats"] if path else json.loads((C.STYLE_DIR / "stats.json").read_text())
+        return stats.get("punct") or punct.DEFAULT
+    except (OSError, ValueError, KeyError):
+        return punct.DEFAULT
 
 
 def style_block(contact_name: str = "", incoming: str = "", contact: User | None = None) -> str:
@@ -565,6 +591,10 @@ async def reply_flow(chat_id: int, contact: User):
 
         allow_media = C.MEDIA_ENABLED and not contact_style_path(contact)
         parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+        if from_model:  # the model punctuates like a textbook; you don't
+            habits = punct_profile(contact)
+            parts = [p if media.MEDIA_LINE_RE.match(p) else punct.apply(p, habits) for p in parts]
+            parts = [p for p in parts if p]
         if not parts:
             return
 
@@ -577,7 +607,8 @@ async def reply_flow(chat_id: int, contact: User):
                 trace.emit("warning", who, f"Second look rejected the draft ({problem}) — rewriting: {reply[:140]}")
                 retry_hint = hint + f"\nYour previous draft was rejected: {problem}. Write a better, simpler reply.\n"
                 reply = clean_reply(await generate(history, contact, retry_hint) or "")
-                parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+                parts = [p if media.MEDIA_LINE_RE.match(p) else punct.apply(p, habits)
+                         for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
                 problem = (await judge.review(http, their_text, "\n".join(parts), expected)
                            if parts and looks_safe(reply) else "no usable second draft")
                 if problem:

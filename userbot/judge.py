@@ -21,7 +21,7 @@ CLOSER_RE = re.compile(
     r"|xop|hop|mayli|bo'?ldi|rahmat|raxmat|tushunarli|ha+|yes|yep|yeah|sure|thx|thanks|ty|got it|alr(ight)?|bet|lol"
     r"|lmao|haha+|ahah+|хаха+|ахах+|аха+|\)+|👍|👌|🙏|❤️?|😂|🤣|😅|😁|🔥|💯)[\s.!)]*$", re.I)
 EMOJI_ONLY_RE = re.compile(r"^[\W\d_]*$")  # no letters at all: emoji, punctuation
-REACTIONS = ["👍", "❤", "🔥", "😁", "👌", "🙏", "🤝", "😢", "🤣", "💯", "😭", "🥰", "👏", "🤔"]  # standard Telegram reactions
+REACTIONS = ["👍", "❤"]  # the only reactions the account uses
 
 
 def closer_action(history) -> str | None:
@@ -39,10 +39,10 @@ def closer_action(history) -> str | None:
             return None
     last = (unanswered[0].raw_text or "").strip().lower()
     if re.match(r"^(спс|спасибо|пасиб|rahmat|raxmat|thx|thanks|ty)", last):
-        return random.choice(["react:🙏", "react:👍", "react:❤", "skip"])
+        return random.choice(["react:❤", "react:👍", "skip"])
     if re.match(r"^(lol|lmao|haha|ahah|хаха|ахах|аха|😂|🤣)", last):
-        return random.choice(["react:😁", "react:🤣", "skip", "skip"])
-    return random.choice(["skip", "skip", "react:👍", "react:👌"])
+        return random.choice(["react:👍", "skip", "skip"])
+    return random.choice(["skip", "skip", "react:👍"])
 
 
 def may_skip(history) -> bool:
@@ -66,7 +66,7 @@ def parse_model_choice(reply: str) -> str | None:
 
 NO_REPLY_HINT = ("\nNot every message needs a text reply. If theirs is just an acknowledgement or a reaction that ends the "
                  "exchange, answer with exactly [skip] (send nothing) or [react 👍] (put an emoji reaction on their "
-                 "message — one of 👍 ❤ 🔥 😁 👌 🙏 🤣 😢). Use a normal reply whenever they asked or said something.\n")
+                 "message — only 👍 or ❤). Use a normal reply whenever they asked or said something.\n")
 
 
 # ---------- messages the owner should handle personally ----------
@@ -118,14 +118,49 @@ async def sensitive_reason(http: httpx.AsyncClient, name: str, history, keywords
 
 # ---------- a second look at the draft before it is sent ----------
 REVIEW = (
-    "A person is about to send this reply in a private chat. Check it like a careful friend would.\n"
+    "A person is about to send this reply in a private chat. Check it only for real mistakes.\n"
     "THEIR MESSAGE:\n{them}\n\nDRAFT REPLY:\n{draft}\n\n"
-    "Answer BAD if the draft: contains made-up or nonsense words or random letters; is written in a different "
-    "language than their message{lang}; ignores a direct question they asked; just repeats their message; contains "
-    "notes about itself, instructions or brackets with commentary; or makes no sense as an answer. "
-    "Slang, short answers, typos, emoji and 'I'll check and tell you later' are all fine.\n"
+    "Answer BAD only if the draft clearly has one of these problems: (1) made-up or nonsense words, random letters, or "
+    "words from a third language mixed in; (2) it is written in a different language than their message{lang}; "
+    "(3) it contains notes about itself, instructions, or commentary in brackets; (4) it just repeats their message "
+    "back. Everything else is OK: short or one-word answers, vague or non-committal answers ('I'll check and tell "
+    "you'), a plain 'no', slang, informal spelling, typos, answering a question with a question.\n"
     "Answer with one word, OK or BAD, then a dash and the reason in at most 8 words."
 )
+
+
+_english: set[str] | None = None
+CHAT_ENGLISH = {
+    "ok", "okay", "lol", "lmao", "bruh", "bro", "chill", "chillin", "vibe", "vibing", "gonna", "wanna", "gotta", "nah",
+    "yeah", "yep", "nope", "idk", "btw", "omg", "wtf", "imo", "rn", "pls", "plz", "thx", "ty", "sry", "cuz", "tho", "fr",
+    "ngl", "sus", "cringe", "nice", "cool", "wow", "yo", "hey", "hi", "bye", "aight", "wsg", "gg", "ez", "noob", "skill",
+    "iphone", "ipad", "macbook", "airpods", "telegram", "youtube", "tiktok", "instagram", "whatsapp", "discord", "steam",
+    "google", "chatgpt", "xiaomi", "samsung", "android", "windows", "wifi", "bluetooth", "online", "offline", "stream",
+    "pubg", "minecraft", "roblox", "fortnite", "valorant", "csgo", "python", "olx", "uzum", "yandex", "click", "payme",
+}
+
+
+def foreign_word(them: str, draft: str) -> str | None:
+    """In a Cyrillic reply: a Latin-letter word that isn't English, chat slang, a brand, or something they wrote."""
+    global _english
+    if not re.search("[а-яё]", draft, re.I):
+        return None
+    if _english is None:
+        try:
+            with open("/usr/share/dict/words") as f:
+                _english = {w.strip().lower() for w in f}
+        except OSError:
+            _english = set()
+    if not _english:
+        return None
+    theirs = set(re.findall(r"[a-z']+", them.lower()))
+    for word in re.findall(r"[A-Za-z][A-Za-z']{3,}", draft):
+        w = word.lower().strip("'")
+        stems = {w, w.rstrip("s"), w[:-2] if w.endswith("ed") else w, w[:-3] if w.endswith("ing") else w,
+                 w[:-3] + "e" if w.endswith("ing") else w}
+        if not (stems & _english or w in CHAT_ENGLISH or w in theirs):
+            return word
+    return None
 
 
 async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str | None = None) -> str | None:
@@ -140,6 +175,9 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
     if expected is None and their_lang in known and draft_lang in known and their_lang != draft_lang \
             and len(them.split()) >= 3 and len(text.split()) >= 3:
         return f"wrong language ({draft_lang} instead of {their_lang})"
+    odd = foreign_word(them, text)
+    if odd:
+        return f"strange word '{odd}'"
     hint = f" (expected: {expected})" if expected else ""
     try:
         resp = await http.post("/complete", json={
