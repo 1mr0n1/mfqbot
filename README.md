@@ -140,6 +140,29 @@ Name, surname and photo are only changed by you (`.ai …` commands or `python -
 - **Forwarding** — reply to any message with `.ai fwd <@username or name>` to forward it. Only you can trigger
   a forward; the account never forwards other chats' messages on someone's request.
 
+### Testing without touching Telegram
+
+`userbot/simulate.py` runs scripted conversations through the real reply code with a fake Telegram client —
+nothing is sent to anyone. State, notes and the day log go to a temp folder; timing is off.
+
+```bash
+# scripted situations (your own JSON: contacts + scenarios, see the docstring)
+.venv/bin/python -m userbot.simulate scenarios.json out.json
+# scenarios sampled from your chat exports, with your real reply kept as the reference
+.venv/bin/python -m userbot.sim_from_exports config.json real.json
+.venv/bin/python -m userbot.simulate real.json out.json
+# numbers to compare runs: flagged replies, wrong language, commitments, closeness to your real replies
+.venv/bin/python -m userbot.simscore before.json after.json
+```
+
+`SIM_RPM` paces model calls (free tiers throttle hard), `SIM_PARALLEL` sets concurrency, `USERBOT_MODELS=local`
+runs everything on a local model. Results are saved after every scenario. Exchanges used as test references are
+hidden from the bot's examples during the run.
+
+How replies are grounded in your own chats: `recall.py` looks up what you answered when someone wrote almost
+the same thing before (only for messages with real content and a close match) and shows it to the model;
+`import_contact.py` / `import_export.py` build the per-person and general example sets.
+
 ### Admin dashboard
 
 Open http://127.0.0.1:8000/admin while the backend and userbot run.
