@@ -298,6 +298,9 @@ def contact_style_path(contact: User):
     return path if contact.username and path.exists() else None
 
 
+FORCE_LANG: dict[str, str] = {}  # style file -> language for the next draft (set when an Uzbek draft was rejected)
+
+
 def contact_style_block(path, incoming: str) -> str:
     """Style for one specific person, built only from your real chat with them."""
     data = json.loads(path.read_text())
@@ -318,7 +321,12 @@ def contact_style_block(path, incoming: str) -> str:
     # and show only examples in it. Mixed-language examples make the model produce mixed-up text.
     relevant = [p for p in data["pairs"] if p.get("them_lang") == wanted and p.get("lang")] or \
                [p for p in data["pairs"] if p.get("lang")]
-    reply_lang = Counter(p["lang"] for p in relevant).most_common(1)[0][0] if relevant else wanted
+    # Which language do you answer in when they write like this? Not always the same one: pick with the same odds
+    # as in your real chat (with your mom, Russian about as often as Uzbek) — unless one is forced for a rewrite.
+    odds = Counter(p["lang"] for p in relevant if p["lang"] in ("ru", "uz", "en"))
+    real = {k: v for k, v in odds.items() if k != "en" or v > sum(odds.values()) * 0.5}  # "ok"/"da" look English
+    reply_lang = (FORCE_LANG.pop(str(path), None)
+                  or (random.choices(list(real), weights=list(real.values()))[0] if real else wanted))
     in_lang = [m for m in data["examples"] if lang.base(lang.detect(m)) == reply_lang] or data["examples"]
     examples = random.sample(in_lang, min(C.STYLE_EXAMPLES, len(in_lang)))
     block += "\nReal messages you sent them:\n" + "\n".join(f"- {m.replace(chr(10), ' / ')}" for m in examples) + "\n"
@@ -780,6 +788,8 @@ async def reply_flow(chat_id: int, contact: User):
         if C.REVIEW and from_model:
             expected = "the language these two normally use with each other" if contact_style_path(contact) else None
             problem = await judge.review(http, their_text, "\n".join(parts), expected)
+            if problem and problem.startswith("Uzbek word") and contact_style_path(contact):
+                FORCE_LANG[str(contact_style_path(contact))] = "ru"  # the model's Uzbek failed: answer in Russian
             if problem:
                 log.info("%s: draft rejected (%s): %r", who, problem, reply[:120])
                 trace.emit("warning", who, f"Second look rejected the draft ({problem}) — rewriting: {reply[:140]}")
