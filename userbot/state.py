@@ -17,6 +17,9 @@ class State:
         # sticker document id -> is it an "Assalomu alaykum" sticker (learned by vision or taught with .ai salam)
         self.salam_stickers: dict[str, bool] = data.get("salam_stickers", {})
         self.pfp_changes: list[float] = data.get("pfp_changes", [])  # when chat-requested photo changes happened
+        # chat id -> newest incoming message id already dealt with / time until which the chat is left to the owner
+        self.handled: dict[str, int] = data.get("handled", {})
+        self.handoff: dict[str, float] = data.get("handoff", {})
         self.bio_history: list[str] = data.get("bio_history", [])
         self.last_bio_at: float = data.get("last_bio_at", 0)
 
@@ -26,7 +29,28 @@ class State:
             "paused_until": self.paused_until, "bot_sent": self.bot_sent,
             "bio_history": self.bio_history, "last_bio_at": self.last_bio_at,
             "salam_stickers": self.salam_stickers, "pfp_changes": self.pfp_changes,
+            "handled": self.handled, "handoff": self.handoff,
         }, indent=2, ensure_ascii=False))
+
+    def mark_handled(self, chat_id: int, message_id: int):
+        if self.handled.get(str(chat_id)) != message_id:
+            self.handled[str(chat_id)] = message_id
+            self.save()
+
+    def is_handled(self, chat_id: int, message_id: int) -> bool:
+        return self.handled.get(str(chat_id)) == message_id
+
+    def hand_off(self, chat_id: int, seconds: float):
+        self.handoff = {k: v for k, v in self.handoff.items() if v > time.time()}
+        self.handoff[str(chat_id)] = time.time() + seconds
+        self.save()
+
+    def clear_handoff(self, chat_id: int):
+        if self.handoff.pop(str(chat_id), None) is not None:
+            self.save()
+
+    def handed_off(self, chat_id: int) -> bool:
+        return time.time() < self.handoff.get(str(chat_id), 0)
 
     def pfp_allowed(self) -> bool:
         from .config import PFP_MAX_PER_DAY, PFP_MIN_GAP

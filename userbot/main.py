@@ -53,8 +53,6 @@ pending: dict[int, asyncio.Task] = {}   # chat_id -> reply in progress
 our_texts: dict[int, list[str]] = {}    # texts we're about to send, to recognize our own outgoing events
 our_ids: set[int] = set()               # message ids sent by the userbot (vs. typed by you)
 names: dict[int, str] = {}              # chat_id -> person's name, for logs
-handled: dict[int, int] = {}            # chat_id -> newest incoming message id already dealt with
-handoff_until: dict[int, float] = {}    # chat_id -> time until which the chat is left to you
 background_tasks: set[asyncio.Task] = set()
 me: User | None = None
 
@@ -398,7 +396,7 @@ async def no_text_reply(chat_id: int, who: str, action: str, history):
 async def reply_flow(chat_id: int, contact: User):
     global me
     who = names[chat_id] = full_name(contact)
-    draft_id = None
+    draft_id, history, failed = None, None, False
     try:
         me = await client.get_me()  # profile may have been changed from outside (userbot.profile)
         await asyncio.sleep(rand(C.DEBOUNCE) + rand(C.READ_DELAY))
@@ -413,11 +411,9 @@ async def reply_flow(chat_id: int, contact: User):
             log.info("%s: you're active here, holding off %.0fs", who, wait)
             trace.emit("decision", who, f"You wrote in this chat recently — holding off {wait:.0f}s so I don't interrupt")
             await asyncio.sleep(wait + rand(C.READ_DELAY))
-        if history:
-            handled[chat_id] = history[0].id
         reason = await judge.sensitive_reason(http, full_name(me), history) if C.HANDOFF else None
         if reason:  # this one is yours: don't answer, don't even mark it read
-            handoff_until[chat_id] = time.time() + C.HANDOFF_HOLD
+            state.hand_off(chat_id, C.HANDOFF_HOLD)
             snippet = " / ".join(m.raw_text for m in reversed(list(itertools.takewhile(lambda m: not m.out, history)))
                                  if m.raw_text)[:300]
             log.info("%s: handed to owner (%s)", who, reason)
@@ -569,13 +565,17 @@ async def reply_flow(chat_id: int, contact: User):
         log.info("%s: replied (%d chars)", who, len(reply))
     except asyncio.CancelledError:
         log.info("%s: reply cancelled", who)
+        failed = True  # not dealt with: a newer run (or you) takes over
         trace.emit("cancelled", who, "Dropped this reply — a new message arrived or you answered yourself",
                    draft_id=draft_id)
         raise
     except Exception:
+        failed = True  # leave it unhandled so the periodic re-scan tries again
         log.exception("%s: reply failed", who)
         trace.emit("warning", who, "Reply failed with an error (see userbot log)", draft_id=draft_id, final=True)
     finally:
+        if history and not failed:  # answered, reacted, skipped or handed to you: don't pick it up again
+            state.mark_handled(chat_id, history[0].id)
         if pending.get(chat_id) is asyncio.current_task():
             pending.pop(chat_id)
 
@@ -750,7 +750,7 @@ async def on_outgoing(event):
     if texts and event.raw_text in texts:
         texts.remove(event.raw_text)
         return
-    handoff_until.pop(event.chat_id, None)  # you answered there yourself; normal rules apply again
+    state.clear_handoff(event.chat_id)  # you answered there yourself; normal rules apply again
     if event.chat_id in pending:
         log.info("%s: you replied yourself, standing down", label(event.chat_id))
         cancel(event.chat_id)
@@ -769,7 +769,7 @@ async def on_incoming(event):
         trace.emit("decision", who, "Not replying — auto-replies are paused" if state.is_paused()
                    else "Not replying — auto-replies are off for this chat")
         return
-    if time.time() < handoff_until.get(event.chat_id, 0):
+    if state.handed_off(event.chat_id):
         trace.emit("decision", who, "Still leaving this chat to you (handed off earlier)")
         return
     cancel(event.chat_id)  # a new message restarts the wait, so bursts get one reply
@@ -798,10 +798,10 @@ async def reply_to_unread(limit: int = 0) -> int:
             continue
         if not last or last.out or dialog.id in pending or not state.is_active(dialog.id, C.REPLY_MODE):
             continue
-        if handled.get(dialog.id) == last.id or time.time() < handoff_until.get(dialog.id, 0):
+        if state.is_handled(dialog.id, last.id) or state.handed_off(dialog.id):
             continue  # already answered, skipped, reacted to, or handed to you
         age = time.time() - last.date.timestamp()
-        if not ((dialog.unread_count and age < C.UNREAD_MAX_AGE) or age < C.IGNORE_OLDER_THAN):
+        if not ((dialog.unread_count and age < C.UNREAD_MAX_AGE) or age < C.RECENT_UNANSWERED):
             continue
         names[dialog.id] = full_name(contact)
         what = f"{dialog.unread_count} unread message(s)" if dialog.unread_count else "a recent unanswered message"

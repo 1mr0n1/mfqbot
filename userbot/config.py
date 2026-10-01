@@ -66,5 +66,6 @@ VISION_MODELS = ["omni", "qwen", "local"]  # models that can look at a picture (
 MAX_IMAGES = 2                 # newest photos from the other person passed to the model per reply
 UNREAD_MAX_AGE = 24 * 3600     # unread DMs older than this are left alone
 UNREAD_SCAN_DIALOGS = 150      # how many recent chats to scan for unread DMs
+RECENT_UNANSWERED = 30 * 60    # also pick up read-but-unanswered messages this recent (e.g. a reply that got stuck)
 UNREAD_RESCAN_SECONDS = 45     # re-check the 30 most recent chats for unread DMs this often
 IGNORE_OLDER_THAN = 300        # ignore messages older than this (e.g. backlog after restart)

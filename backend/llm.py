@@ -41,12 +41,17 @@ async def complete(client: httpx.AsyncClient, model: dict, messages: list[dict],
         payload |= model.get("no_think", {})
     headers = {"Authorization": f"Bearer {provider['api_key']}"}
 
+    # Short chat replies must fail fast so the next model gets a turn; long analysis jobs may take minutes.
+    timeout = 30 if max_tokens <= 1000 else 300
     for attempt, delay in enumerate([0, *RETRY_DELAYS], start=1):
         if delay:
             await asyncio.sleep(delay)
         try:
-            resp = await client.post(provider["url"], json=payload, headers=headers, timeout=120)
+            resp = await client.post(provider["url"], json=payload, headers=headers, timeout=timeout)
             data = resp.json()
+        except httpx.TimeoutException:
+            log.warning("%s (%s) gave no answer in %ds — moving on", model["id"], model["provider"], timeout)
+            raise LLMError("The model took too long to answer.")
         except (httpx.HTTPError, ValueError) as e:
             log.warning("%s request failed (attempt %d): %r", model["provider"], attempt, e)
             continue
