@@ -14,12 +14,20 @@ class State:
         self.paused_until: float = data.get("paused_until", 0)  # temporary pause (unix time)
         # message ids the userbot sent, per chat — so style learning never mistakes them for yours
         self.bot_sent: dict[str, list[int]] = data.get("bot_sent", {})
+        self.bio_history: list[str] = data.get("bio_history", [])
+        self.last_bio_at: float = data.get("last_bio_at", 0)
 
     def save(self):
         STATE_PATH.write_text(json.dumps({
             "enabled": sorted(self.enabled), "disabled": sorted(self.disabled), "paused": self.paused,
             "paused_until": self.paused_until, "bot_sent": self.bot_sent,
-        }, indent=2))
+            "bio_history": self.bio_history, "last_bio_at": self.last_bio_at,
+        }, indent=2, ensure_ascii=False))
+
+    def record_bio(self, bio: str):
+        self.bio_history = (self.bio_history + [bio])[-20:]
+        self.last_bio_at = time.time()
+        self.save()
 
     def enable(self, chat_id: int):
         self.enabled.add(chat_id)

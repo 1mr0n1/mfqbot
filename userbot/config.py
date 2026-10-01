@@ -17,6 +17,12 @@ STYLE_EXAMPLES = 40         # of your real messages shown to the model per reply
 CLIPS_PATH = HERE / "clips.json"  # tag -> your voice/round-video clip in Saved Messages
 MEDIA_ENABLED = os.environ.get("USERBOT_MEDIA", "true").lower() in ("1", "true", "yes")
 
+# Auto-bio: the account updates its own bio now and then (see autoprofile.py)
+AUTO_BIO = os.environ.get("USERBOT_AUTO_BIO", "true").lower() in ("1", "true", "yes")
+BIO_INTERVAL_HOURS = (6, 14)
+BIO_QUIET_HOURS = (1, 8)       # no bio changes between 01:00 and 08:00
+BIO_MAX_CHARS = 70             # Telegram limit without Premium
+
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 MODELS = [m.strip() for m in os.environ.get("USERBOT_MODELS", "nemotron,qwen").split(",") if m.strip()]
 REPLY_MODE = os.environ.get("USERBOT_REPLY_MODE", "allowlist")  # "allowlist" or "all"

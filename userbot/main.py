@@ -25,6 +25,7 @@ from telethon.tl.types import User
 
 from . import config as C
 from . import media
+from .autoprofile import bio_loop
 from .state import State
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -490,9 +491,11 @@ async def main():
         enabled = [await resolve_name(cid) for cid in sorted(state.enabled)]
         log.info("Enabled chats: %s", ", ".join(enabled) or "none (type .ai on in a chat)")
     await catch_up()
+    bio_task = asyncio.create_task(bio_loop(client, state))
     try:
         await client.run_until_disconnected()
     finally:
+        bio_task.cancel()
         await http.aclose()
 
 

@@ -65,12 +65,18 @@ Control it by typing these from your account (the command is deleted, confirmati
 Media: replies can include stickers (your favorites/recents first), GIFs (via @gif) and your own recorded
 voice / round video clips. The model never fakes voice or video — it can only send clips you recorded.
 Profile changes are owner commands only; the AI can't change your profile.
+Auto-bio (`USERBOT_AUTO_BIO`): every 6–14h, never at night, the account rewrites its own bio in the learned
+style (no chat content is used, so nothing private leaks); each change is noted in Saved Messages.
+Name, surname and photo are only changed by you (`.ai …` commands or `python -m userbot.profile`).
 `USERBOT_REPLY_MODE=all` replies in every private chat (`.ai off` excludes one); `allowlist` only in chats
 enabled with `.ai on`. `USERBOT_HUMAN_PACING=false` replies instantly; `USERBOT_MEDIA=false` disables media.
 
 Safety behaviour: private chats only (no groups/channels/bots/Telegram service messages), stays quiet
 if you wrote in the chat within the last 2 minutes, cancels its reply if you start replying yourself,
 won't commit you to meetings/money/favors. Style is in `userbot/persona.md`, timing in `userbot/config.py`.
+Auto-bio (`USERBOT_AUTO_BIO`): every 6–14h, never at night, the account rewrites its own bio in the learned
+style (no chat content is used, so nothing private leaks); each change is noted in Saved Messages.
+Name, surname and photo are only changed by you (`.ai …` commands or `python -m userbot.profile`).
 `USERBOT_REPLY_MODE=all` replies in every private chat instead of only enabled ones.
 
 ### Teaching it your texting style
