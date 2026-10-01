@@ -16,6 +16,9 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai pfp undo       — anywhere: remove the newest profile photo (e.g. one someone asked the bot to set)
   .ai summary        — anywhere: today's digest now (it also arrives every evening)
   .ai fwd <@username or name> — reply to any message with this: forward it to that person or group
+  .ai manual         — in a private chat: never answer there, just tell you someone wrote (.ai on undoes it)
+  .ai today <text>   — anywhere: tell it something true about today ("сделал домашку", "на теннисе до 7");
+                       it answers from that until midnight. `.ai today` alone shows what it knows.
   .ai note <text>    — in a private chat: remember something about that person
   .ai notes / .ai forgetnotes — in a private chat: show / erase what is remembered about that person
 """
@@ -151,8 +154,10 @@ def looks_safe(reply: str) -> bool:
 
 
 # Lines that make it sound like a customer-support bot get dropped.
-ASSISTANT_RE = re.compile(r"\b(assist|let me know if you need|anything else|how can i help|feel free|happy to help)\b",
-                          re.I)
+ASSISTANT_RE = re.compile(
+    r"\b(assist|let me know if you need|anything else|how can i help|feel free|happy to help)\b"
+    r"|чем\s+(я\s+)?(могу|можно)\s+помочь|обращай(ся|тесь)|если\s+что[-\s]*то\s+нужно|буду\s+ждать,?\s+когда\s+появится"
+    r"|yordam\s+bera\s+ola|qanday\s+yordam|доступ\s+к\s+просмотру", re.I)
 
 # Questions about who or what is answering ("are you a bot?", "who are you?", "is this really you?") are ignored:
 # no confirmation, no denial. Lines where the model claims to be human are dropped, so ignoring never becomes lying.
@@ -305,6 +310,18 @@ def contact_style_block(path, incoming: str) -> str:
     return block
 
 
+def unsure_phrases(incoming: str) -> str:
+    """Your own ways of saying "don't know yet", in the language of this conversation."""
+    try:
+        bank = json.loads((C.STYLE_DIR / "phrases.json").read_text())
+    except (OSError, ValueError):
+        bank = {}
+    code = lang.base(lang.detect(incoming)) or "ru"
+    phrases = bank.get(code) or {"ru": ["не знаю", "хз", "посмотрим"], "en": ["idk", "not sure"],
+                                 "uz": ["bilmasam", "bilmadim"]}.get(code) or ["(say it in their language)"]
+    return ", ".join(f'"{p}"' for p in phrases)
+
+
 def style_stats(contact: User) -> dict:
     """Your measured habits (lengths, punctuation): with this person if they have a style file, else in general."""
     try:
@@ -390,16 +407,17 @@ async def generate(history, contact: User, extra: str = "") -> str | None:
     incoming = " ".join(m.raw_text for m in itertools.takewhile(lambda m: not m.out, history) if m.raw_text)
     if len(incoming.split()) < 3:  # "ok", an emoji, a photo: go by how this person has been writing lately
         incoming = " ".join([m.raw_text for m in history if not m.out and m.raw_text][:8])
-    system = persona.format(name=full_name(me), contact=full_name(contact),
+    system = persona.format(name=me.first_name or full_name(me), contact=full_name(contact),
                             style=style_block(full_name(contact), incoming, contact),
-                            now=datetime.now().strftime("%A %d %B %Y, %H:%M"))
+                            now=datetime.now().strftime("%A %d %B %Y, %H:%M"),
+                            status=rhythm.status())
     if not contact_style_path(contact):
         system += media.media_block(full_name(me))
     if photos:
         system += PHOTO_HINT
     system += memory.facts_block(full_name(me)) + memory.notes_block(contact.id, full_name(contact))
-    if C.SMART_SKIP and judge.may_skip(history):
-        system += judge.NO_REPLY_HINT
+    if C.SMART_SKIP:
+        system += judge.REACT_HINT
     system += extra  # what just happened outside the conversation (e.g. a profile photo change)
     try:
         resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS,
@@ -415,6 +433,11 @@ async def generate(history, contact: User, extra: str = "") -> str | None:
     trace.emit("decision", full_name(contact),
                f"Model used: {data['model']}" + (f" — looked at {photos} photo(s)" if photos else ""))
     return data["reply"]
+
+
+# formal Russian, the way a teacher or an official writes (family members have their own style files)
+TEACHER_RE = re.compile(r"здравствуйте|\bвы\b|\bвас\b|\bвам\b|\bваш\w*|\b(зайдите|подойдите|передайте|принесите|сдайте|"
+                        r"напишите|ответьте|сообщите)\b", re.I)
 
 
 def spawn(coro):
@@ -514,6 +537,11 @@ async def reply_flow(chat_id: int, contact: User):
         identity = identity_question(history)
         reason = (await judge.sensitive_reason(http, full_name(me), history, keywords_only=identity is not None)
                   if C.HANDOFF else None)
+        if not reason and chat_id in state.manual:
+            reason = "this chat is set to manual (.ai on to change)"
+        if not reason and C.HANDOFF and not contact_style_path(contact) and TEACHER_RE.search(their_text) \
+                and not judge.closer_action(history):
+            reason = "a formal message (teacher / official) — better answered by you"
         if reason:  # this one is yours: don't answer, don't even mark it read
             state.hand_off(chat_id, C.HANDOFF_HOLD)
             snippet = " / ".join(m.raw_text for m in reversed(list(itertools.takewhile(lambda m: not m.out, history)))
@@ -566,6 +594,14 @@ async def reply_flow(chat_id: int, contact: User):
 
         action = (judge.closer_action(history)
                   if C.SMART_SKIP and not greeting.reply and not greeting.sticker and not photo_msg else None)
+        if action and quirks.is_formal(history) and re.search(r"до\s+свидания|всего\s+доброго|xayr", their_text, re.I):
+            our_texts.setdefault(chat_id, []).append("До свидания")
+            sent = await client.send_message(chat_id, "До свидания")
+            our_ids.add(sent.id)
+            state.record_sent(chat_id, sent.id)
+            trace.emit("sent", who, "До свидания")
+            daylog.record("replied", who, "До свидания", them=their_text[:200])
+            return
         if action:
             await no_text_reply(chat_id, who, action, history)
             return
@@ -598,14 +634,16 @@ async def reply_flow(chat_id: int, contact: User):
             else:
                 log.warning("%s: giving up, no model answered", who)
                 trace.emit("warning", who, "Giving up — no model answered")
-            action = (judge.parse_model_choice(reply or "")
-                      if C.SMART_SKIP and not greeting.reply and judge.may_skip(history) else None)
+            action = judge.parse_model_choice(reply or "") if C.SMART_SKIP and not greeting.reply else None
             if action:  # the model decided this needs no text
                 await no_text_reply(chat_id, who, action, history)
                 return
             reply = clean_reply(reply or "")
             if greeting.reply:  # salam + something else: fixed greeting first, then the model's answer
-                reply = (greeting.reply + "\n" + salam.strip_greeting_line(reply)).strip()
+                rest = salam.strip_greeting_line(reply)
+                rest = "\n".join(salam.TAIL_RE.sub(" ", salam.SALAM_RE.sub(" ", ln)).strip(" ,.!") if salam.SALAM_RE.search(ln)
+                                 else ln for ln in rest.splitlines())
+                reply = (greeting.reply + "\n" + rest).strip()
         if not reply:
             trace.emit("decision", who, "Nothing to send — staying quiet")
             return
@@ -620,6 +658,39 @@ async def reply_flow(chat_id: int, contact: User):
 
         allow_media = C.MEDIA_ENABLED and not contact_style_path(contact)
         parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+        formal = quirks.is_formal(history)
+        fixed = greeting.reply if greeting.reply else None  # the fixed salam line is never rewritten
+        if from_model:
+            # It must not agree to plans or claim what you did or didn't do: rewrite once, then use a neutral phrase.
+            said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
+            over = judge.overreach(their_text, said, memory.today_note())
+            if over:
+                trace.emit("decision", who, f"Draft made a {over} I can't back up (“{said[:60]}”) — rewriting")
+                again = clean_reply(await generate(history, contact, hint + (
+                    "\nYour draft agreed to a plan or promised something. You don't know yet whether you can — say so, "
+                    "briefly, without agreeing.\n" if over == "commitment" else
+                    "\nYour draft said yes or no about something you did today, but you don't know that. Don't answer "
+                    "yes or no — put it off briefly.\n")) or "")
+                again_parts = [p for p in split_reply(again) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+                again_said = " ".join(p for p in again_parts if not media.MEDIA_LINE_RE.match(p))
+                if again_said and looks_safe(again) and not judge.overreach(their_text, again_said, memory.today_note()):
+                    reply, parts = again, ([fixed] if fixed else []) + again_parts
+                else:
+                    neutral = judge.dodge(over, lang.base(lang.detect(their_text)))
+                    reply, parts = neutral, ([fixed] if fixed else []) + [neutral]
+            parts = [p if media.MEDIA_LINE_RE.match(p) or p == fixed else quirks.fix_greeting(p, their_text, formal) if i == 0 else p
+                     for i, p in enumerate(parts)]
+            # Saying the exact same thing as a moment ago is what bots do: ask for a different wording once.
+            recent_own = {re.sub(r"[\W_]+", " ", (m.raw_text or "").lower()).strip() for m in history[:8] if m.out}
+            said = re.sub(r"[\W_]+", " ", " ".join(parts).lower()).strip()
+            if said and said in recent_own and len(said.split()) >= 2:
+                trace.emit("decision", who, "Same wording as a moment ago — rewriting it differently")
+                again = clean_reply(await generate(history, contact, hint + (
+                    f"\nYou already wrote exactly “{' '.join(parts)}” a moment ago. Answer what they said now, "
+                    "in different words.\n")) or "")
+                if again and looks_safe(again):
+                    reply = again
+                    parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
         if from_model:
             # You text short. A rambling draft is rewritten once, then cut down if it's still too long.
             limit, max_parts = quirks.length_limits(style_stats(contact), their_text)
@@ -643,7 +714,7 @@ async def reply_flow(chat_id: int, contact: User):
                 parts = kept
             # the model punctuates like a textbook; you don't
             habits = punct_profile(contact)
-            parts = [p if media.MEDIA_LINE_RE.match(p) else punct.apply(p, habits) for p in parts]
+            parts = [p if media.MEDIA_LINE_RE.match(p) or p == fixed else punct.apply(p, habits) for p in parts]
             parts = [p for p in parts if p]
         if not parts:
             return
@@ -741,6 +812,16 @@ async def reply_flow(chat_id: int, contact: User):
         rhythm.online_for_a_bit(client)
         if sent_count:
             daylog.record("replied", who, " / ".join(parts), them=their_text[:200])
+        if sent_count and from_model and not formal and random.random() < C.EXTRA_REACTION_CHANCE:
+            target = next((m for m in history if not m.out), None)
+            if target:  # people also just tap a reaction on the message they answered
+                emoji = "❤" if getattr(target, "photo", None) or random.random() < 0.3 else "👍"
+                try:
+                    await client(functions.messages.SendReactionRequest(peer=chat_id, msg_id=target.id,
+                                                                        reaction=[ReactionEmoji(emoticon=emoji)]))
+                    trace.emit("sent", who, f"[reaction {emoji}] on their message")
+                except errors.RPCError:
+                    pass
         if C.REMEMBER:
             theirs = [m.raw_text for m in itertools.takewhile(lambda m: not m.out, history) if m.raw_text]
             spawn(remember_later(chat_id, who, theirs[::-1]))
@@ -765,8 +846,8 @@ async def reply_flow(chat_id: int, contact: User):
 @client.on(events.NewMessage(outgoing=True, pattern=r"^\.ai(?:\s+(\w+))?(?:\s+(@?[\w.-]+))?\s*$"))
 async def on_command(event):
     arg = (event.pattern_match.group(1) or "status").lower()
-    if arg in PROFILE_COMMANDS or arg == "note":
-        return  # handled by on_profile_command / on_note_command
+    if arg in PROFILE_COMMANDS or arg in ("note", "today"):
+        return  # handled by on_profile_command / on_note_command / on_today_command
     tag = (event.pattern_match.group(2) or "").lower()
     chat_id = event.chat_id
     in_saved = chat_id == me.id
@@ -818,6 +899,13 @@ async def on_command(event):
     elif arg == "on":
         state.enable(chat_id)
         note = "✅ auto-replies ON for {chat}"
+    elif arg == "manual":
+        if in_saved or not event.is_private:
+            note = "⚠️ use .ai manual inside the private chat you mean"
+        else:
+            state.set_manual(chat_id)
+            cancel(chat_id)
+            note = "✋ {chat}: I won't answer there — I'll just tell you when they write (.ai on to undo)"
     elif arg == "off":
         state.disable(chat_id)
         cancel(chat_id)
@@ -853,6 +941,17 @@ async def on_command(event):
 
 
 PROFILE_COMMANDS = {"name", "surname", "bio", "photo", "profile"}
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+today(?:\s+(.+))?$"))
+async def on_today_command(event):
+    """`.ai today <text>`: something true about today, so questions like "did you do your homework?" get real answers."""
+    text = (event.pattern_match.group(1) or "").strip()
+    await event.delete()
+    if text:
+        await client.send_message("me", f"📅 today: {memory.add_today(text)}")
+    else:
+        await client.send_message("me", f"📅 today: {memory.today_note() or 'nothing yet — tell me with .ai today <text>'}")
 
 
 @client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+note\s+(.+)$"))
@@ -1016,9 +1115,11 @@ async def group_reply_flow(event, sender: User):
             if content:
                 author = "You" if msg.out else (full_name(msg.sender) if isinstance(msg.sender, User) else "Someone")
                 lines.append(f"{author}: {content}")
-        system = persona.format(name=full_name(me), contact=f"{full_name(sender)} (in the group “{getattr(chat, 'title', '')}”)",
+        system = persona.format(name=me.first_name or full_name(me),
+                                contact=f"{full_name(sender)} (in the group “{getattr(chat, 'title', '')}”)",
                                 style=style_block(full_name(sender), text),
-                                now=datetime.now().strftime("%A %d %B %Y, %H:%M"))
+                                now=datetime.now().strftime("%A %d %B %Y, %H:%M"),
+                                status=rhythm.status())
         system += memory.facts_block(full_name(me)) + GROUP_HINT.format(sender=full_name(sender))
         if identity_question([event.message]) == "mixed":
             system += IDENTITY_HINT

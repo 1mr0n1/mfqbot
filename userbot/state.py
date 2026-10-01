@@ -10,6 +10,7 @@ class State:
         data = json.loads(STATE_PATH.read_text()) if STATE_PATH.exists() else {}
         self.enabled: set[int] = set(data.get("enabled", []))
         self.disabled: set[int] = set(data.get("disabled", []))
+        self.manual: set[int] = set(data.get("manual", []))  # chats that are always left to you (with a note)
         self.paused: bool = data.get("paused", False)
         self.paused_until: float = data.get("paused_until", 0)  # temporary pause (unix time)
         # message ids the userbot sent, per chat — so style learning never mistakes them for yours
@@ -26,6 +27,7 @@ class State:
     def save(self):
         STATE_PATH.write_text(json.dumps({
             "enabled": sorted(self.enabled), "disabled": sorted(self.disabled), "paused": self.paused,
+            "manual": sorted(self.manual),
             "paused_until": self.paused_until, "bot_sent": self.bot_sent,
             "bio_history": self.bio_history, "last_bio_at": self.last_bio_at,
             "salam_stickers": self.salam_stickers, "pfp_changes": self.pfp_changes,
@@ -73,6 +75,11 @@ class State:
     def enable(self, chat_id: int):
         self.enabled.add(chat_id)
         self.disabled.discard(chat_id)
+        self.manual.discard(chat_id)
+        self.save()
+
+    def set_manual(self, chat_id: int):
+        self.manual.add(chat_id)
         self.save()
 
     def disable(self, chat_id: int):

@@ -5,7 +5,28 @@ import re
 
 from . import config as C
 
-FORMAL_RE = re.compile(r"здравствуйте|уважаем|\bвы\b|\bвас\b|\bвам\b|assalomu\s+alaykum|\bsiz\b|\bsizga\b|\bsizni\b", re.I)
+FORMAL_RE = re.compile(r"здравствуйте|уважаем|до\s+свидания|\bвы\b|\bвас\b|\bвам\b|\bваш\w*"
+                       r"|\b(зайдите|подойдите|передайте|принесите|сдайте|напишите|ответьте|сообщите|позвоните|придите|извините)\b"
+                       r"|assalomu\s+alaykum|ассалому\s+ала?йкум|\bsiz\b|\bsizga\b|\bsizni\b", re.I)
+THEY_GREET_RE = re.compile(r"\b(привет\w*|здравств\w*|здаров\w*|добр(ое|ый)\s+(утро|день|вечер)|ку|хай|салам\w*|салом\w*|"
+                           r"ассалом\w*|hi|hey|hello|yo|sup|salom|assalomu)\b", re.I)
+# greeting word (any case), optionally followed by a Capitalized name / name + patronymic
+LEADING_GREETING_RE = re.compile(r"^\s*((?i:здравствуйте|привет(?:ик)?|салом|salom|hi|hey|hello|yo|доброе утро|добрый (?:день|вечер)))"
+                                 r"(\s+[А-ЯЁA-Z][а-яёa-z]+(\s+[А-ЯЁA-Z][а-яёa-z]+)?)?[\s,!.]+")
+
+
+def fix_greeting(reply: str, their_text: str, formal: bool) -> str:
+    """No greeting unless they greeted; never "Здравствуйте" to someone who writes casually."""
+    match = LEADING_GREETING_RE.match(reply)
+    if not match:
+        return reply
+    rest = reply[match.end():].strip()
+    greeted = bool(THEY_GREET_RE.search(their_text))
+    if not greeted and not formal and rest:
+        return rest[0].upper() + rest[1:]
+    if not formal and match.group(1).lower().startswith("здравствуйте"):
+        return ("Привет, " + rest) if greeted and rest else (rest[0].upper() + rest[1:] if rest else "Привет")
+    return reply
 WORD_RE = re.compile(r"[^\W\d_]{5,}")
 
 

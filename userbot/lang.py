@@ -105,7 +105,17 @@ def detect(text: str) -> str | None:
     # One shared word isn't enough to name a foreign language in a longer message.
     if scores[best] and (best in ("uz", "ru-latn", "en") or scores[best] >= 2 or len(words) < 3):
         return best
-    return "en" if len(words) < 3 else "other"  # nothing recognized: short = treat as English, longer = unknown
+    if len(words) < 3:
+        return "en"  # nothing recognized and short: treat as English
+    try:  # longer: English if most words are in the system dictionary or common chat English
+        from .judge import _is_english, _load_words
+        _load_words()
+        real = [w for w in words if len(w) >= 3]  # two-letter "words" exist in every language
+        if real and sum(_is_english(w) for w in real) >= len(real) * 0.7:
+            return "en"
+    except Exception:
+        pass
+    return "other"
 
 
 def base(code: str | None) -> str | None:

@@ -35,11 +35,34 @@ def facts_block(name: str) -> str:
     facts = "\n".join(lines)
     if not facts:
         return ""
-    return (f"\nTrue facts about your own life, {name}. These are background knowledge, NOT things to recite: "
+    today = today_note()
+    if today:
+        facts += f"\nToday ({time.strftime('%A')}): {today}"
+    return (f"\nTrue facts about your own life, {name}. They may be written in English, but you say them in the "
+            "language of the chat (the school is «Лидер» in Russian) and you never write @usernames — use first "
+            "names. These are background knowledge, NOT things to recite: "
             "mention a fact only when they ask about exactly that, and then give only that one thing in a few words "
             "(asked your name → just your first name; asked your school → just the school). Never volunteer other "
             "facts, never introduce yourself. Anything about your life that is NOT listed here you don't know, so "
             f"stay vague about it instead of making it up:\n{facts}\n")
+
+
+def today_note() -> str:
+    """What you told the account about today (`.ai today <text>`); forgotten when the day ends."""
+    if not C.TODAY_PATH.exists():
+        return ""
+    try:
+        data = json.loads(C.TODAY_PATH.read_text())
+    except ValueError:
+        return ""
+    return "; ".join(data.get("notes", [])) if data.get("date") == time.strftime("%Y-%m-%d") else ""
+
+
+def add_today(text: str) -> str:
+    notes = today_note().split("; ") if today_note() else []
+    notes.append(text.strip())
+    C.TODAY_PATH.write_text(json.dumps({"date": time.strftime("%Y-%m-%d"), "notes": notes}, ensure_ascii=False))
+    return "; ".join(notes)
 
 
 def _path(chat_id: int):

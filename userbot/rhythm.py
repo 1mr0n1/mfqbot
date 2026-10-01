@@ -57,6 +57,18 @@ def busy(now: datetime | None = None) -> bool:
     return C.RHYTHM and now.weekday() < 5 and _in_window(C.BUSY_WINDOW, now)
 
 
+def status(now: datetime | None = None) -> str:
+    """Where you most likely are right now, from your routine — so "ты где?" gets a sane answer, not an invention."""
+    now = now or datetime.now()
+    if _in_window(C.SLEEP_WINDOW, now):
+        return "at home, in bed (it's night)"
+    if now.weekday() < 5 and _in_window(C.BUSY_WINDOW, now):
+        return "at school (in class or on a break)"
+    if now.hour >= 20 or now.hour < 8:
+        return "at home"
+    return "out of school, free time — you don't say exactly where you are; 'занят', 'гуляю', 'по делам' is enough"
+
+
 def wait_seconds(chat_id: int) -> float:
     """How long before this chat gets looked at. An ongoing conversation is answered right away."""
     if not C.RHYTHM:
@@ -65,7 +77,9 @@ def wait_seconds(chat_id: int) -> float:
     if now - _last_reply_at.get(chat_id, 0) < C.ACTIVE_CHAT_SECONDS:
         return 0  # we're mid-conversation
     if _available_at.get(chat_id, 0) > now:
-        return _available_at[chat_id] - now  # already decided when; new messages don't push it back
+        # They wrote again while waiting: someone who keeps messaging gets looked at soon, not minutes later.
+        _available_at[chat_id] = min(_available_at[chat_id], now + random.uniform(5, 20))
+        return _available_at[chat_id] - now
     if busy():
         delay = random.uniform(*C.BUSY_DELAY)
     elif random.random() < C.SLOW_CHANCE:

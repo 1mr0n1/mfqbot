@@ -28,13 +28,14 @@ SLEEP_WINDOW = os.environ.get("USERBOT_SLEEP", "00:00-07:00")   # asleep: nothin
 BUSY_WINDOW = os.environ.get("USERBOT_BUSY", "08:30-15:30")     # weekdays (school): answers come late
 WAKE_JITTER_MIN = (5, 30)        # minutes after waking before the phone is picked up
 BUSY_DELAY = (180, 1200)         # seconds until a message is looked at while busy
-SLOW_CHANCE = 0.15               # otherwise: chance that a message waits a while anyway
-SLOW_DELAY = (120, 600)
+SLOW_CHANCE = float(os.environ.get("USERBOT_SLOW_CHANCE", "0.06"))  # chance that a message waits a while anyway
+SLOW_DELAY = (60, 240)
 ACTIVE_CHAT_SECONDS = 240        # after a reply the chat counts as an ongoing conversation: no delays
 ONLINE_LINGER = (15, 60)         # seconds to stay "online" after doing something
 
 # Small human touches (see quirks.py)
 TEMPERATURE = float(os.environ.get("USERBOT_TEMPERATURE", "0.5"))  # lower = steadier wording, fewer made-up words
+EXTRA_REACTION_CHANCE = float(os.environ.get("USERBOT_REACTION_CHANCE", "0.12"))  # also react to a message you answer
 EMOJI_KEEP_CHANCE = float(os.environ.get("USERBOT_EMOJI_CHANCE", "0.04"))  # share of replies allowed to keep ONE emoji
 TYPO_CHANCE = float(os.environ.get("USERBOT_TYPO_CHANCE", "0.06"))  # share of messages sent with a typo, then fixed
 QUOTE_IF_OLDER_THAN = 3600       # answering something this old (seconds): quote it
@@ -55,6 +56,7 @@ VOICE_MAX_SECONDS = 180
 # What the account knows (see memory.py) and when it stays out (see judge.py)
 FACTS_PATH = HERE / "facts.md"   # you write this; git-ignored
 MEMORY_DIR = HERE / "memory"     # automatic notes per person; git-ignored
+TODAY_PATH = HERE / "today.json" # what you told it about today (.ai today …); git-ignored
 REMEMBER = os.environ.get("USERBOT_REMEMBER", "true").lower() in ("1", "true", "yes")
 SMART_SKIP = os.environ.get("USERBOT_SMART_SKIP", "true").lower() in ("1", "true", "yes")  # react / stay silent
 HANDOFF = os.environ.get("USERBOT_HANDOFF", "true").lower() in ("1", "true", "yes")        # sensitive -> you
