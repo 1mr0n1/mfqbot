@@ -81,6 +81,7 @@ REPLY_MODE = os.environ.get("USERBOT_REPLY_MODE", "allowlist")  # "allowlist" or
 DEBOUNCE = (0, 0)              # extra wait before reading (the draft hold below already absorbs message bursts)
 READ_DELAY = (0, 0)            # "picking up the phone" before the chat is marked read
 THINK_DELAY = (0, 0)           # pause between reading and writing
+DASHBOARD_HISTORY = 40         # messages per chat shown in the dashboard's dialog view
 APPROVE_TIMEOUT = 15 * 60      # in "approve before sending" mode an unapproved draft is dropped after this long
 MIN_HOLD = 1.0                 # a draft is always visible (and cancellable on /admin) at least this long
 DRAFT_HOLD = (2, 3)            # legacy fixed hold; real timing now comes from rhythm.reading/thinking_seconds
@@ -103,6 +104,7 @@ VISION_MODELS = ["omni", "qwen", "local"]  # models that can look at a picture (
 MAX_IMAGES = 2                 # newest photos from the other person passed to the model per reply
 UNREAD_MAX_AGE = 24 * 3600     # unread DMs older than this are left alone
 UNREAD_SCAN_DIALOGS = 150      # how many recent chats to scan for unread DMs
-RECENT_UNANSWERED = 30 * 60    # also pick up read-but-unanswered messages this recent (e.g. a reply that got stuck)
+RECENT_UNANSWERED = 10 * 3600  # read-but-unanswered messages this recent still get an answer — opening a chat
+                               # yourself must not cancel the reply (covers a whole night of sleep)
 UNREAD_RESCAN_SECONDS = 45     # re-check the 30 most recent chats for unread DMs this often
 IGNORE_OLDER_THAN = 300        # ignore messages older than this (e.g. backlog after restart)

@@ -873,6 +873,7 @@ async def reply_flow(chat_id: int, contact: User):
         log.exception("%s: reply failed", who)
         trace.emit("warning", who, "Reply failed with an error (see userbot log)", draft_id=draft_id, final=True)
     finally:
+        spawn(push_history(chat_id))
         if history and not failed:  # answered, reacted, skipped or handed to you: don't pick it up again
             state.mark_handled(chat_id, history[0].id)
         if pending.get(chat_id) is asyncio.current_task():
@@ -1096,6 +1097,8 @@ async def on_outgoing(event):
         texts.remove(event.raw_text)
         return
     state.clear_handoff(event.chat_id)  # you answered there yourself; normal rules apply again
+    if event.is_private:
+        spawn(push_history(event.chat_id))
     if event.chat_id in pending:
         log.info("%s: you replied yourself, standing down", label(event.chat_id))
         cancel(event.chat_id)
@@ -1110,6 +1113,7 @@ async def on_incoming(event):
         return
     who = names[event.chat_id] = full_name(sender)
     trace.emit("incoming", who, describe(event.message)[:300])
+    spawn(push_history(event.chat_id))
     if not state.is_active(event.chat_id, C.REPLY_MODE):
         trace.emit("decision", who, "Not replying — auto-replies are paused" if state.is_paused()
                    else "Not replying — auto-replies are off for this chat")
@@ -1217,6 +1221,17 @@ async def on_group_mention(event):
     pending[event.chat_id] = asyncio.create_task(group_reply_flow(event, sender))
 
 
+async def push_history(chat_id: int):
+    """Send the dashboard the recent conversation with this person (for the dialog view)."""
+    try:
+        messages = await client.get_messages(chat_id, limit=C.DASHBOARD_HISTORY)
+        await trace.report_history(label(chat_id), [
+            {"id": m.id, "out": bool(m.out), "bot": bool(m.out and sent_by_us(chat_id, m)),
+             "text": describe(m) or "[message]", "ts": m.date.timestamp()} for m in reversed(messages)])
+    except Exception:
+        log.debug("Could not push history for %s", chat_id, exc_info=True)
+
+
 def chat_by_name(name: str) -> int | None:
     return next((cid for cid, n in names.items() if n == name), None)
 
@@ -1240,6 +1255,8 @@ async def run_command(cmd: dict):
                    else "Approve-before-sending is OFF: drafts send by themselves")
     elif chat_id is None:
         trace.emit("warning", name, "Dashboard action ignored — I don't know that chat yet")
+    elif kind == "history":
+        await push_history(chat_id)
     elif kind == "mode":
         mode = cmd.get("value")
         if mode == "off":
@@ -1337,8 +1354,9 @@ async def unread_loop():
 
 
 async def reply_to_unread(limit: int = 0) -> int:
-    """Answer private chats that are waiting on you: unread DMs (up to UNREAD_MAX_AGE old), plus very
-    recent unanswered ones (e.g. sent during a restart). Groups, channels and bots are never touched."""
+    """Answer private chats that are waiting on you: unread DMs (up to UNREAD_MAX_AGE old), plus unanswered ones
+    you have already opened yourself (up to RECENT_UNANSWERED old) — seeing a message doesn't answer it.
+    Anything already answered, reacted to, skipped or handed to you is left alone. No groups, channels or bots."""
     count = 0
     if rhythm.asleep():
         return count  # nobody answers at night; these get picked up after waking

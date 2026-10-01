@@ -112,7 +112,7 @@ function addDraft(e) {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => post(`/admin/drafts/${id}/edit`, {parts: ta.value.split("\n"), editing: true}), 150);
   });
-  ta.addEventListener("focus", () => post(`/admin/drafts/${id}/edit`, {parts: ta.value.split("\n"), editing: true}).then(() => { d.dirty = true; }));
+  // clicking into the box or just looking does nothing: only actual typing freezes the draft
   el.querySelector(".send").addEventListener("click", async ev => {
     ev.target.disabled = true;
     await post(`/admin/drafts/${id}/send`, {parts: ta.value.split("\n")});

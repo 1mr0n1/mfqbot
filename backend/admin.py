@@ -25,6 +25,7 @@ _drafts: dict[str, dict] = {}            # draft id -> {"cancelled": bool, "send
 _commands: deque[dict] = deque(maxlen=200)
 _command_ids = itertools.count(1)
 _status: dict = {}
+_history: dict[str, dict] = {}           # chat name -> {"ts": ..., "messages": [...]} as last reported by the userbot
 PAGE = Path(__file__).with_name("admin.html")
 
 
@@ -41,7 +42,7 @@ class DraftEdit(BaseModel):
 
 
 class Command(BaseModel):
-    type: str            # pause | resume | approve | mode | answer | say
+    type: str            # pause | resume | approve | mode | answer | say | history
     chat: str = ""       # person's name as shown on the dashboard
     text: str = ""       # for "say"
     value: str = ""      # for "mode": auto | manual | off; for "approve": on | off
@@ -108,6 +109,23 @@ async def add_command(command: Command):
 async def list_commands(after: int = 0):
     latest = _commands[-1]["id"] if _commands else 0  # lets the userbot notice a backend restart (ids start over)
     return {"latest": latest, "commands": [c for c in _commands if c["id"] > after]}
+
+
+# ----- conversations, for the dialog view -----
+class History(BaseModel):
+    chat: str
+    messages: list[dict]   # oldest first: {"id", "out", "bot", "text", "ts"}
+
+
+@router.post("/history")
+async def set_history(history: History):
+    _history[history.chat] = {"ts": time.time(), "messages": history.messages}
+    return {"ok": True}
+
+
+@router.get("/history")
+async def get_history(chat: str):
+    return _history.get(chat, {"ts": None, "messages": []})
 
 
 # ----- what the userbot is doing right now (it reports every few seconds) -----
