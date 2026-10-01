@@ -616,11 +616,22 @@ async def on_incoming(event):
     pending[event.chat_id] = asyncio.create_task(reply_flow(event.chat_id, sender))
 
 
-async def reply_to_unread() -> int:
+async def unread_loop():
+    """Safety net: Telegram's live update feed can go quiet (e.g. when another connection uses the same
+    login), so re-scan the most recent chats for unread DMs on a timer."""
+    while True:
+        await asyncio.sleep(C.UNREAD_RESCAN_SECONDS)
+        try:
+            await reply_to_unread(limit=30)
+        except Exception:
+            log.exception("Unread re-scan failed")
+
+
+async def reply_to_unread(limit: int = 0) -> int:
     """Answer private chats that are waiting on you: unread DMs (up to UNREAD_MAX_AGE old), plus very
     recent unanswered ones (e.g. sent during a restart). Groups, channels and bots are never touched."""
     count = 0
-    async for dialog in client.iter_dialogs(limit=C.UNREAD_SCAN_DIALOGS):
+    async for dialog in client.iter_dialogs(limit=limit or C.UNREAD_SCAN_DIALOGS):
         contact, last = dialog.entity, dialog.message
         if not isinstance(contact, User) or contact.bot or contact.is_self or contact.deleted \
                 or contact.id == TELEGRAM_SERVICE_ID:
@@ -657,11 +668,12 @@ async def main():
         log.info("Enabled chats: %s", ", ".join(enabled) or "none (type .ai on in a chat)")
     trace.emit("system", "", f"Userbot started as {full_name(me)} — mode: {C.REPLY_MODE}, models: {', '.join(C.MODELS)}")
     await reply_to_unread()
-    bio_task = asyncio.create_task(bio_loop(client, state))
+    background = [asyncio.create_task(bio_loop(client, state)), asyncio.create_task(unread_loop())]
     try:
         await client.run_until_disconnected()
     finally:
-        bio_task.cancel()
+        for task in background:
+            task.cancel()
         await http.aclose()
 
 
