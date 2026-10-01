@@ -261,10 +261,14 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
             and len(_norm(text).split()) >= 2:
         return "it repeats their message"
     their_lang, draft_lang = lang.base(lang.detect(them)), lang.base(lang.detect(text))
-    known = {"uz", "ru", "en"}
-    if expected is None and their_lang in known and draft_lang in known and their_lang != draft_lang \
-            and len(them.split()) >= 2 and len(text.split()) >= 2:
-        return f"wrong language ({draft_lang} instead of {their_lang})"
+    their_cyrillic = bool(re.search("[а-яё]", them, re.I))
+    # Only clear mismatches count. A Russian answer to Latin-script text (transliterated Russian, Uzbek, mixed)
+    # is how you often write, so it passes; Uzbek or English out of nowhere does not.
+    if expected is None and len(them.split()) >= 2 and len(text.split()) >= 2:
+        if draft_lang == "uz" and their_lang != "uz":
+            return f"wrong language (uz instead of {their_lang})"
+        if draft_lang == "en" and their_lang == "ru" and their_cyrillic:
+            return "wrong language (en instead of ru)"
     odd = foreign_word(them, text)
     if odd:
         return f"strange word '{odd}'"
@@ -288,18 +292,20 @@ PLAN_RE = re.compile(
     r"set\s+(me|up)|can\s+(you|u)\s+(set|send|give|buy|get)|встрет\w*|давай\s+(в|на|завтра|сегодня|после)|поможешь|принес\w*|"
     r"отдашь|ждём|ждем|выходи|подойд[её]шь|переночу\w*|купи\w*|позвони\w*|забери\w*|сходи\w*|съезди\w*|приезжай\w*|"
     r"приходи\w*|заходи\w*|отнеси\w*|верни\w*|оплати\w*|закажи\w*|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
-    r"\b(wanna|coming|come\s+(over|to)|meet|bring|let'?s)\b|kelasan\w*|borasan\w*|chiqasan\w*|uchrash\w*|olib\s+kel", re.I)
+    r"\b(wanna|coming|come\s+(over|to)|meet|bring|let'?s)\b|kelasan\w*|borasan\w*|chiqasan\w*|uchrash\w*|olib\s+kel|"
+    r"\b\w{3,}(asanmi|asizmi|asilami|asila|aymi|amizmi|olasanmi)\b|\bborib\s+kel|\bkelib\s+ket|\b(bor|kel|ol|ber|ayt)(ing|gin)?\b", re.I)
 COMMIT_RE = re.compile(
     r"\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|переночую|куплю|"
     r"позвоню|заберу|схожу|съезжу|отнесу|верну|оплачу|закажу|поеду|пойду|"
     r"го|погнали|заходи|выхожу|иду|еду)\b|\bв\s+\d{1,2}([:.]\d\d)?\b|\bчерез\s+(час|пол\w*|минут\w*|\d+)|\bжду\b|\b(sure|ok|okay|yeah),?\s+(do|i'?ll|will|done)\b|\b(давай|ок|окей|хорошо|да|конечно)\b[\s,]+\b(приду|буду|зайду|го|давай|помогу)\b|"
     r"\b(i'?ll\s+(come|be|bring|help)|coming|on\s+my\s+way|let'?s\s+go|sure\s+let'?s|yeah\s+let'?s|im\s+down)\b|"
-    r"\b(kelaman|boraman|chiqaman|olib\s+kelaman|xop\s+kelaman)\b", re.I)
+    r"\b(kelaman|boraman|chiqaman|olib\s+kelaman|xop\s+kelaman|\w{3,}(ayapman|aman|amiz|yman)|hozir\s+\w+man)\b", re.I)
 DID_RE = re.compile(
     r"\b(сделал\w*|сдал\w*|прив[её]з(ла|ли)?|прин[её]с(ла|ли)?|подготовил\w*|написал\w*|выучил\w*|поел\w*|покушал\w*|кушал\w*|"
     r"взял\w*|купил\w*|забрал\w*|был\w*\s+(на|в|у)|ходил\w*|почему\s+(тебя|вас)\s+не\s+было)\b|"
-    r"\bdid\s+(u|you)\b|\bhave\s+(u|you)\b|yedingmi|qildingmi|bordingmi|oldingmi|keldingmi|yozdingmi", re.I)
-CLAIM_RE = re.compile(r"^\W*(да|нет|не|неа|ага|угу|yes|yeah|yep|no|nope|nah|ha|yo'?q|xa|йўқ|ҳа)\b", re.I)
+    r"\bdid\s+(u|you)\b|\bhave\s+(u|you)\b|\b\w{2,}(dingmi|dingizmi|ganmisan|ganmisiz|ibmi|dimi)\b", re.I)
+CLAIM_RE = re.compile(r"^\W*(да|нет|не|неа|ага|угу|yes|yeah|yep|no|nope|nah|ha|haa|yo['ʻ‘’]?q|yoq|xa|йўқ|ҳа|"
+                      r"\w{2,}(dim|madim|ganman|maganman))\b", re.I)
 AFFIRM_RE = re.compile(r"^\W*(да|ага|угу|ок|окей|оке\w*|хорошо|конечно|давай|го|погнали|sure|yeah|yes|yep|ok|okay|bet|"
                        r"mayli|xop|ha)\b", re.I)
 UNSURE_RE = re.compile(r"не\s+знаю|не\s+помню|не\s+уверен|посмотр|может|хз|потом|позже|idk|not\s+sure|maybe|later|dunno|"
@@ -311,11 +317,17 @@ DODGE = {
 }
 
 
+RELAY_RE = re.compile(r"передай\w*|скажи\s+(ему|ей|им|маме|папе|\w+е)\b|\bayt\b|aytib\s+qo|\btell\s+(him|her|them|your)\b", re.I)
+RELAY_OK_RE = re.compile(r"передам|скажу|aytaman|aytib\s+qo|i'?ll\s+tell|will\s+tell|xop\b", re.I)
+
+
 def overreach(them: str, draft: str, known_today: str = "") -> str | None:
     """-> 'commitment' (agreeing to come/meet/bring/help) or 'claim' (yes/no about what you did) — or None."""
     text = draft.lower()
     if UNSURE_RE.search(text):
         return None  # already non-committal
+    if RELAY_RE.search(them) and RELAY_OK_RE.search(text):
+        return None  # "tell your dad…" → "ok, I'll tell him" is fine
     if PLAN_RE.search(them) and (COMMIT_RE.search(text) or AFFIRM_RE.match(text)):
         return "commitment"
     if DID_RE.search(them) and CLAIM_RE.match(text) and not known_today:
