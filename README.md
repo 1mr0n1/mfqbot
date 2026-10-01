@@ -64,10 +64,14 @@ Control it by typing these from your account (the command is deleted, confirmati
 | `.ai name …` / `.ai surname …` / `.ai bio …` | Saved Messages | change your profile (`-` clears surname/bio) |
 | `.ai photo` | Saved Messages, as a reply to a photo | set it as your profile photo |
 | `.ai profile` | Saved Messages | show current name / surname / bio |
+| `.ai pfp undo` | anywhere | remove the newest profile photo (the previous one comes back) |
 
 Media: replies can include stickers (your favorites/recents first), GIFs (via @gif) and your own recorded
 voice / round video clips. The model never fakes voice or video — it can only send clips you recorded.
-Profile changes are owner commands only; the AI can't change your profile.
+Profile photo on request (`USERBOT_PFP_FROM_CHATS`): if someone sends a photo and explicitly asks you to use it
+as your profile picture, the account sets it — after a vision model clears the picture (fails closed), at
+most 3 times a day and 10 minutes apart; each change is reported in Saved Messages. Name, surname and bio
+are never changed from chats.
 Vision: photos the other person sends are passed to a model that can see them (`omni`, then `qwen`/`local`);
 text-only models get a `[photo]` placeholder. Unread DMs up to 24h old are answered at startup — private
 chats only, never groups, channels or bots.

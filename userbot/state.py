@@ -16,6 +16,7 @@ class State:
         self.bot_sent: dict[str, list[int]] = data.get("bot_sent", {})
         # sticker document id -> is it an "Assalomu alaykum" sticker (learned by vision or taught with .ai salam)
         self.salam_stickers: dict[str, bool] = data.get("salam_stickers", {})
+        self.pfp_changes: list[float] = data.get("pfp_changes", [])  # when chat-requested photo changes happened
         self.bio_history: list[str] = data.get("bio_history", [])
         self.last_bio_at: float = data.get("last_bio_at", 0)
 
@@ -24,8 +25,17 @@ class State:
             "enabled": sorted(self.enabled), "disabled": sorted(self.disabled), "paused": self.paused,
             "paused_until": self.paused_until, "bot_sent": self.bot_sent,
             "bio_history": self.bio_history, "last_bio_at": self.last_bio_at,
-            "salam_stickers": self.salam_stickers,
+            "salam_stickers": self.salam_stickers, "pfp_changes": self.pfp_changes,
         }, indent=2, ensure_ascii=False))
+
+    def pfp_allowed(self) -> bool:
+        from .config import PFP_MAX_PER_DAY, PFP_MIN_GAP
+        recent = [t for t in self.pfp_changes if time.time() - t < 86400]
+        return len(recent) < PFP_MAX_PER_DAY and (not recent or time.time() - max(recent) >= PFP_MIN_GAP)
+
+    def record_pfp(self):
+        self.pfp_changes = [t for t in self.pfp_changes if time.time() - t < 86400] + [time.time()]
+        self.save()
 
     def remember_salam_sticker(self, doc_id: str, is_salam: bool):
         self.salam_stickers[doc_id] = is_salam

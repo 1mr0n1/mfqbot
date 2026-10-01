@@ -13,6 +13,7 @@ Control it by sending these from your account (they're deleted instantly; confir
   (Saved Messages only)
   .ai name <first name> / .ai surname <last name or -> / .ai bio <text or -> / .ai profile
   .ai photo          — reply to a photo with this to make it your profile photo
+  .ai pfp undo       — anywhere: remove the newest profile photo (e.g. one someone asked the bot to set)
 """
 import asyncio
 from collections import Counter
@@ -30,7 +31,7 @@ from telethon import TelegramClient, errors, events, functions
 from telethon.tl.types import User
 
 from . import config as C
-from . import lang, media, salam
+from . import lang, media, pfp, salam
 from . import trace
 from .autoprofile import bio_loop
 from .state import State
@@ -317,7 +318,7 @@ async def attach_photos(history, messages: list[dict]) -> int:
     return len(parts) - 1
 
 
-async def generate(history, contact: User) -> str | None:
+async def generate(history, contact: User, extra: str = "") -> str | None:
     messages = to_chat_messages(history)
     if not messages or messages[-1]["role"] != "user":
         return ""  # nothing to answer (None means the backend failed)
@@ -332,6 +333,7 @@ async def generate(history, contact: User) -> str | None:
         system += media.media_block(full_name(me))
     if photos:
         system += PHOTO_HINT
+    system += extra  # what just happened outside the conversation (e.g. a profile photo change)
     try:
         resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS,
                                                   "max_tokens": 300})
@@ -368,6 +370,19 @@ async def reply_flow(chat_id: int, contact: User):
             await asyncio.sleep(wait + rand(C.READ_DELAY))
         await client.send_read_acknowledge(chat_id)
         await asyncio.sleep(rand(C.THINK_DELAY))
+
+        hint = ""
+        photo_msg = await pfp.find_request(history) if C.PFP_FROM_CHATS else None
+        if photo_msg:
+            trace.emit("decision", who, "They asked me to use their photo as the profile picture — checking it")
+            outcome = await pfp.apply(client, state, http, photo_msg, who)
+            trace.emit("system" if outcome == "changed" else "warning", who, {
+                "changed": "Profile photo changed to the one they sent (undo: .ai pfp undo)",
+                "limit": "Not changing the profile photo — it was changed too recently (rate limit)",
+                "unsafe": "Not using that photo — the safety look didn't clear it",
+                "error": "Couldn't change the profile photo (download/upload failed)"}[outcome])
+            log.info("%s: profile photo request -> %s", who, outcome)
+            hint = pfp.HINTS[outcome]
 
         greeting = await salam.check(client, state, http, history)
         if greeting.sticker:  # a salam sticker is answered with the very same sticker
@@ -406,7 +421,7 @@ async def reply_flow(chat_id: int, contact: User):
                     trace.emit("warning", who, f"No model answered — trying again in {delay:.0f}s "
                                                f"(attempt {attempt}/{C.GENERATE_RETRIES})")
                     await asyncio.sleep(delay)
-                reply = await generate(history, contact)
+                reply = await generate(history, contact, hint)
                 if reply is not None:
                     break
             else:
@@ -421,7 +436,7 @@ async def reply_flow(chat_id: int, contact: User):
         if not looks_safe(reply):
             log.warning("%s: blocked suspicious reply (%d chars): %r — retrying once", who, len(reply), reply[:200])
             trace.emit("warning", who, f"Blocked a suspicious draft ({len(reply)} chars), writing another: {reply[:160]}")
-            reply = clean_reply(await generate(history, contact) or "")
+            reply = clean_reply(await generate(history, contact, hint) or "")
             if not reply or not looks_safe(reply):
                 log.warning("%s: second reply also unusable, staying quiet", who)
                 trace.emit("warning", who, "Second draft was unusable too — staying quiet")
@@ -506,6 +521,13 @@ async def on_command(event):
     if arg in ("save", "forget", "clips"):
         await client.send_message("me", clip_command(arg, tag, replied, in_saved))
         return
+    if arg == "pfp":
+        if tag != "undo":
+            note = "⚠️ usage: .ai pfp undo"
+        else:
+            note = "↩️ newest profile photo removed" if await pfp.undo(client) else "⚠️ there is no profile photo to remove"
+        await client.send_message("me", note)
+        return
     if arg in ("savepack", "salam", "notsalam"):
         if not replied or not replied.sticker:
             note = f"⚠️ reply to a sticker with .ai {arg}"
@@ -563,7 +585,7 @@ PROFILE_COMMANDS = {"name", "surname", "bio", "photo", "profile"}
 
 @client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+(name|surname|bio|photo|profile)\b\s*(.*)$"))
 async def on_profile_command(event):
-    """Profile changes are owner-only commands — the AI itself can never change your profile."""
+    """Owner commands for name / surname / bio / photo. (The only thing a chat can trigger is pfp.py.)"""
     global me
     cmd, value = event.pattern_match.group(1).lower(), event.pattern_match.group(2).strip()
     replied = await event.get_reply_message() if event.is_reply else None

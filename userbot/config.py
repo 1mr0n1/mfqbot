@@ -19,6 +19,11 @@ CONTACT_PAIRS = 14          # same, for a person with their own style file (styl
 CLIPS_PATH = HERE / "clips.json"  # tag -> your voice/round-video clip in Saved Messages
 MEDIA_ENABLED = os.environ.get("USERBOT_MEDIA", "true").lower() in ("1", "true", "yes")
 
+# Profile photo on request: someone sends a photo and asks you to use it as your profile picture (see pfp.py)
+PFP_FROM_CHATS = os.environ.get("USERBOT_PFP_FROM_CHATS", "true").lower() in ("1", "true", "yes")
+PFP_MAX_PER_DAY = 3
+PFP_MIN_GAP = 600              # seconds between two changes
+
 # Auto-bio: the account updates its own bio now and then (see autoprofile.py)
 AUTO_BIO = os.environ.get("USERBOT_AUTO_BIO", "true").lower() in ("1", "true", "yes")
 BIO_INTERVAL_HOURS = (6, 14)
