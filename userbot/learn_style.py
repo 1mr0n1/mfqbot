@@ -96,7 +96,8 @@ async def write_profile(messages: list[str], stats: dict) -> str:
     prompt = (
         "Below are statistics and a random sample of Telegram messages written by ONE person. "
         "Write a precise style guide (in English, as bullet points, max ~350 words) that would let someone "
-        "text EXACTLY like this person. Cover: languages and when they switch/mix them, typical length and "
+        "text EXACTLY like this person. Describe each language they use SEPARATELY (Russian, English, Uzbek — whichever appear): how they write in it, "
+        "typical words and phrases in it, how formal they are. Then cover: when they switch/mix languages, typical length and "
         "message-splitting, capitalization and punctuation habits, emoji/smiley habits (e.g. ')' smiles), "
         "slang, abbreviations and signature words/phrases (quote them literally), greetings and sign-offs, "
         "how they agree/refuse/laugh, and overall tone. Only describe what the data shows; do not invent.\n\n"

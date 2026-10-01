@@ -8,12 +8,18 @@ messages are only used locally, to measure how you split replies into bursts.
 """
 import asyncio
 import html
+import json
+import random
 import re
 import sys
 from collections import Counter
 from pathlib import Path
 
+from . import config as C
+from . import lang
 from .learn_style import URL_RE, build_style, compute_stats, usable
+
+MAX_PAIRS = 800
 
 BLOCK_RE = re.compile(r'<div class="message (default clearfix(?: joined)?|service)" id="message\d+">')
 FROM_RE = re.compile(r'<div class="from_name">\s*(.*?)\s*</div>', re.S)
@@ -61,6 +67,25 @@ def burst_stats(dialogs: list[list[dict]], me: str) -> dict:
                                       for k, v in sorted(counts.items())}}
 
 
+def exchange_pairs(dialog: list[dict], me: str) -> list[dict]:
+    """Turn-level examples: what the other person wrote, and what you answered right after."""
+    turns: list[tuple[str, list[str]]] = []
+    for msg in dialog:
+        text = URL_RE.sub("", msg["text"]).strip()
+        if not text:
+            continue
+        if turns and turns[-1][0] == msg["author"]:
+            turns[-1][1].append(text)
+        else:
+            turns.append((msg["author"], [text]))
+    pairs = []
+    for (a1, t1), (a2, t2) in zip(turns, turns[1:]):
+        them, mine = "\n".join(t1[-3:]), "\n".join(t2[:3])
+        if a1 != me and a2 == me and len(them) <= 250 and len(mine) <= 250 and usable(them) and usable(mine):
+            pairs.append({"with": a1, "them": them, "me": mine, "lang": lang.detect(mine)})
+    return pairs
+
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit(__doc__)
@@ -69,10 +94,11 @@ def main():
     if not files:
         raise SystemExit(f"No messages*.html found under {folder}")
 
-    texts, per_chat, media, dialogs = [], Counter(), Counter(), []
+    texts, per_chat, media, dialogs, pairs = [], Counter(), Counter(), [], []
     for f in files:
         dialog = parse_export(f)
         dialogs.append(dialog)
+        pairs += exchange_pairs(dialog, me)
         authors = Counter(m["author"] for m in dialog)
         mine = [m for m in dialog if m["author"] == me]
         print(f"  {f.parent.name}/{f.name}: {len(dialog)} messages, authors {dict(authors)}")
@@ -86,8 +112,13 @@ def main():
 
     if not texts:
         raise SystemExit(f"No messages by author {me!r}. Check the exact name shown in the export.")
-    stats = compute_stats(texts, per_chat) | burst_stats(dialogs, me) | {"media_sent": dict(media)}
+    by_lang = Counter(lang.base(lang.detect(t)) for t in texts)
+    print(f"  your messages by language: {dict(by_lang)} | exchanges collected: {len(pairs)}")
+    stats = (compute_stats(texts, per_chat) | burst_stats(dialogs, me)
+             | {"media_sent": dict(media), "messages_by_language": dict(by_lang)})
     asyncio.run(build_style(texts, stats))
+    random.shuffle(pairs)
+    (C.STYLE_DIR / "pairs.json").write_text(json.dumps(pairs[:MAX_PAIRS], ensure_ascii=False, indent=1))
 
 
 if __name__ == "__main__":

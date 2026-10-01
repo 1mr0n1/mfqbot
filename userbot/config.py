@@ -14,6 +14,8 @@ STATE_PATH = HERE / "state.json"
 PERSONA_PATH = HERE / "persona.md"
 STYLE_DIR = HERE / "style"  # written by learn_style.py (your personal messages — git-ignored)
 STYLE_EXAMPLES = 40         # of your real messages shown to the model per reply
+STYLE_PAIRS = 8             # real "they wrote → you answered" exchanges shown per reply
+CONTACT_PAIRS = 14          # same, for a person with their own style file (style/contacts/<username>.json)
 CLIPS_PATH = HERE / "clips.json"  # tag -> your voice/round-video clip in Saved Messages
 MEDIA_ENABLED = os.environ.get("USERBOT_MEDIA", "true").lower() in ("1", "true", "yes")
 

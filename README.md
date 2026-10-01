@@ -103,6 +103,17 @@ Either from a Telegram Desktop export (Chat → ⋮ → Export chat history → 
 .venv/bin/python -m userbot.learn_style [session]                    # live account (userbot stopped)
 ```
 
+Per-person style (built locally, no model call) — the userbot then talks to that username only the way
+your real chat with them shows, in one language at a time, without stickers/GIFs:
+
+```bash
+.venv/bin/python -m userbot.import_contact "chat-histories/ChatExport_X" "YourName" their_username
+```
+
+Replies are language-aware (Uzbek incl. everyday Tashkent forms, Russian, English), mirror formality
+(вы/siz for formal messages) and stay non-committal about plans, times, money and favors.
+Model routing: `USERBOT_MODELS=nemotron,omni,…` — text goes to the first model, photos to vision models first.
+
 Only your own messages are learned from (forwards, links and messages containing slurs are skipped).
 This writes `userbot/style/` (profile + 400 real example messages, git-ignored); each reply includes the
 profile and 40 random examples. Re-run any time — the userbot picks it up without a restart.

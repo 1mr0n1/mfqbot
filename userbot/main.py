@@ -13,7 +13,9 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai photo          — reply to a photo with this to make it your profile photo
 """
 import asyncio
+from collections import Counter
 import base64
+import itertools
 import json
 import logging
 import random
@@ -26,7 +28,7 @@ from telethon import TelegramClient, errors, events, functions
 from telethon.tl.types import User
 
 from . import config as C
-from . import media
+from . import lang, media
 from . import trace
 from .autoprofile import bio_loop
 from .state import State
@@ -130,7 +132,8 @@ def owner_quiet_in(chat_id: int, history) -> float:
 
 
 # Last line of defense: never send something that looks like the model's reasoning or instructions.
-LEAK_RE = re.compile(r"\b(the user|we need to|we must|the instruction|system prompt|as an ai|language model)\b"
+LEAK_RE = re.compile(r"\b(the user|we need to|we must|the instruction|system prompt|as an ai|language model"
+                     r"|impossible to infer|adhering to|rule \d|final check)\b"
                      r"|\{(name|contact|style|now)\}", re.I)
 MAX_REPLY_CHARS = 700
 
@@ -198,18 +201,88 @@ def split_reply(reply: str) -> list[str]:
     return parts
 
 
-def style_block() -> str:
+def _prefer(items: list, wanted, key, count: int) -> list:
+    """Up to `count` random items, taking the ones where key(item) == wanted first."""
+    matching = [i for i in items if key(i) == wanted] if wanted else []
+    others = [i for i in items if i not in matching]
+    picks = random.sample(matching, min(count, len(matching)))
+    return picks + random.sample(others, min(count - len(picks), len(others)))
+
+
+def contact_style_path(contact: User):
+    """Per-person style file (see import_contact.py), or None if this person has none."""
+    path = C.STYLE_DIR / "contacts" / f"{(contact.username or '').lower()}.json"
+    return path if contact.username and path.exists() else None
+
+
+def contact_style_block(path, incoming: str) -> str:
+    """Style for one specific person, built only from your real chat with them."""
+    data = json.loads(path.read_text())
+    st, wanted = data["stats"], lang.base(lang.detect(incoming))
+    turns = ", ".join(f"{k} message(s) in a row {v}%" for k, v in st.get("messages_per_turn_pct", {}).items())
+    block = (
+        f"You are talking to {data['name']} — someone you know very well. Write to them ONLY the way your real "
+        "messages to them below show: same languages, same words and forms of address, same politeness, same "
+        "length. Do not use slang, greetings or jokes that don't appear in these examples.\n"
+        f"Facts from your real chat with them: languages you use (share of your messages): {st.get('languages_pct')}; "
+        f"typical message is about {st['length_chars']['median']} characters; {turns}; "
+        f"emoji in {st.get('with_emoji_pct', 0)}% of messages"
+        + (f" (mostly {' '.join(st['top_emojis'][:5])})" if st.get("top_emojis") else "") + ".\n"
+    )
+    # Pick ONE reply language in code — the one you most often answer in when they write in this language —
+    # and show only examples in it. Mixed-language examples make the model produce mixed-up text.
+    relevant = [p for p in data["pairs"] if p.get("them_lang") == wanted and p.get("lang")] or \
+               [p for p in data["pairs"] if p.get("lang")]
+    reply_lang = Counter(p["lang"] for p in relevant).most_common(1)[0][0] if relevant else wanted
+    in_lang = [m for m in data["examples"] if lang.base(lang.detect(m)) == reply_lang] or data["examples"]
+    examples = random.sample(in_lang, min(C.STYLE_EXAMPLES, len(in_lang)))
+    block += "\nReal messages you sent them:\n" + "\n".join(f"- {m.replace(chr(10), ' / ')}" for m in examples) + "\n"
+    same = [p for p in relevant if p["lang"] == reply_lang]
+    pairs = random.sample(same, min(C.CONTACT_PAIRS, len(same)))
+    if pairs:
+        block += ("\nReal exchanges with them — what they wrote and what you actually answered "
+                  "(copy the manner and the language choice, never the content):\n"
+                  + "\n".join(f"THEM: {p['them'].replace(chr(10), ' / ')}\nYOU: {p['me'].replace(chr(10), ' / ')}"
+                              for p in pairs) + "\n")
+    name = {"uz": "Uzbek (Latin letters, exactly the everyday forms shown above)", "ru": "Russian",
+            "en": "English"}.get(reply_lang, "the language of the examples above")
+    block += (f"\nLanguage note: write your whole reply in {name}. Use only words and forms that appear in your "
+              "real messages above; if unsure, answer with something very short.\n")
+    return block
+
+
+def style_block(contact_name: str = "", incoming: str = "", contact: User | None = None) -> str:
     """Learned style (see learn_style.py). Re-read every time so re-learning needs no restart."""
-    profile_path, examples_path = C.STYLE_DIR / "profile.md", C.STYLE_DIR / "examples.json"
+    path = contact_style_path(contact) if contact else None
+    if path:
+        return contact_style_block(path, incoming)
+    profile_path = C.STYLE_DIR / "profile.md"
+    examples_path, pairs_path = C.STYLE_DIR / "examples.json", C.STYLE_DIR / "pairs.json"
     if not profile_path.exists():
         return ""
+    code = lang.detect(incoming)
+    wanted = lang.base(code)
     block = f"How {full_name(me)} texts — follow this closely, it matters more than the generic rules above:\n"
     block += profile_path.read_text().strip() + "\n"
     if examples_path.exists():
         examples = json.loads(examples_path.read_text())
-        picks = random.sample(examples, min(C.STYLE_EXAMPLES, len(examples)))
+        # Mostly messages in the language of this conversation, so the right register gets copied.
+        picks = _prefer(examples, wanted, lambda m: lang.base(lang.detect(m)), C.STYLE_EXAMPLES)
         block += ("\nReal messages they've sent (for style only — don't reuse their content):\n"
                   + "\n".join(f"- {m.replace(chr(10), ' / ')}" for m in picks) + "\n")
+    if pairs_path.exists():
+        pairs = json.loads(pairs_path.read_text())
+        same_person = [p for p in pairs if p["with"] == contact_name]
+        picks = (random.sample(same_person, min(C.STYLE_PAIRS, len(same_person))) if same_person
+                 else _prefer(pairs, wanted, lambda p: lang.base(p.get("lang")), C.STYLE_PAIRS))
+        if picks:
+            block += ("\nReal exchanges — what someone wrote and what they actually answered "
+                      "(copy the manner, never the content):\n"
+                      + "\n".join(f"THEM: {p['them'].replace(chr(10), ' / ')}\nYOU: {p['me'].replace(chr(10), ' / ')}"
+                                  for p in picks) + "\n")
+    if code:
+        block += (f"\nLanguage note: their latest message is in {lang.NAMES[code]}. Write your whole reply in "
+                  "that language and script.\n")
     return block
 
 
@@ -247,8 +320,14 @@ async def generate(history, contact: User) -> str | None:
     if not messages or messages[-1]["role"] != "user":
         return ""  # nothing to answer (None means the backend failed)
     photos = await attach_photos(history, messages) if C.VISION else 0
-    system = persona.format(name=full_name(me), contact=full_name(contact), style=style_block(),
-                            now=datetime.now().strftime("%A %d %B %Y, %H:%M")) + media.media_block(full_name(me))
+    incoming = " ".join(m.raw_text for m in itertools.takewhile(lambda m: not m.out, history) if m.raw_text)
+    if len(incoming.split()) < 3:  # "ok", an emoji, a photo: go by how this person has been writing lately
+        incoming = " ".join([m.raw_text for m in history if not m.out and m.raw_text][:8])
+    system = persona.format(name=full_name(me), contact=full_name(contact),
+                            style=style_block(full_name(contact), incoming, contact),
+                            now=datetime.now().strftime("%A %d %B %Y, %H:%M"))
+    if not contact_style_path(contact):
+        system += media.media_block(full_name(me))
     if photos:
         system += PHOTO_HINT
     try:
@@ -322,7 +401,8 @@ async def reply_flow(chat_id: int, contact: User):
                 trace.emit("warning", who, "Second draft was unusable too — staying quiet")
                 return
 
-        parts = [p for p in split_reply(reply) if C.MEDIA_ENABLED or not media.MEDIA_LINE_RE.match(p)]
+        allow_media = C.MEDIA_ENABLED and not contact_style_path(contact)
+        parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
         if not parts:
             return
 
