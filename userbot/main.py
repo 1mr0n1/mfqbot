@@ -229,8 +229,10 @@ async def generate(history, contact: User) -> str | None:
 
 
 async def reply_flow(chat_id: int, contact: User):
+    global me
     names[chat_id] = full_name(contact)
     try:
+        me = await client.get_me()  # profile may have been changed from outside (userbot.profile)
         await asyncio.sleep(rand(C.DEBOUNCE) + rand(C.READ_DELAY))
 
         # If you've been chatting here yourself, hold off until you've gone quiet, then re-check.
