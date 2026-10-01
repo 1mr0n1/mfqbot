@@ -31,5 +31,10 @@ GENERATE_RETRIES = 3           # if every model fails, try again later this many
 RETRY_DELAY = (45, 90)         # wait between those attempts
 
 CONTEXT_MESSAGES = 30          # how much chat history the model sees
+if os.environ.get("USERBOT_HUMAN_PACING", "true").lower() not in ("1", "true", "yes"):
+    # Instant mode: reply as soon as the model answers (typing indicator only while generating).
+    DEBOUNCE = READ_DELAY = THINK_DELAY = TYPING_LIMITS = (0, 0)
+    BETWEEN_MESSAGES = (0.3, 0.6)
+
 OWNER_ACTIVE_WINDOW = 120      # don't auto-reply if you personally wrote in the chat this recently
 IGNORE_OLDER_THAN = 300        # ignore messages older than this (e.g. backlog after restart)

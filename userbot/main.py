@@ -33,6 +33,7 @@ persona = C.PERSONA_PATH.read_text()
 pending: dict[int, asyncio.Task] = {}   # chat_id -> reply in progress
 our_texts: dict[int, list[str]] = {}    # texts we're about to send, to recognize our own outgoing events
 our_ids: set[int] = set()               # message ids sent by the userbot (vs. typed by you)
+names: dict[int, str] = {}              # chat_id -> person's name, for logs
 me: User | None = None
 
 
@@ -52,6 +53,20 @@ def cancel(chat_id: int):
 
 def full_name(user: User) -> str:
     return " ".join(filter(None, [user.first_name, user.last_name])) or user.username or "someone"
+
+
+def label(chat_id: int) -> str:
+    return names.get(chat_id, str(chat_id))
+
+
+async def resolve_name(chat_id: int) -> str:
+    if chat_id not in names:
+        try:
+            entity = await client.get_entity(chat_id)
+            names[chat_id] = full_name(entity) if isinstance(entity, User) else getattr(entity, "title", str(chat_id))
+        except Exception:
+            return str(chat_id)
+    return names[chat_id]
 
 
 def describe(msg) -> str:
@@ -174,6 +189,7 @@ async def generate(history, contact: User) -> str | None:
 
 
 async def reply_flow(chat_id: int, contact: User):
+    names[chat_id] = full_name(contact)
     try:
         await asyncio.sleep(rand(C.DEBOUNCE) + rand(C.READ_DELAY))
 
@@ -184,7 +200,7 @@ async def reply_flow(chat_id: int, contact: User):
             wait = owner_quiet_in(history)
             if not wait:
                 break
-            log.info("Chat %s: you're active here, holding off %.0fs", chat_id, wait)
+            log.info("%s: you're active here, holding off %.0fs", label(chat_id), wait)
             await asyncio.sleep(wait + rand(C.READ_DELAY))
         await client.send_read_acknowledge(chat_id)
         await asyncio.sleep(rand(C.THINK_DELAY))
@@ -199,20 +215,20 @@ async def reply_flow(chat_id: int, contact: User):
             for attempt in range(C.GENERATE_RETRIES + 1):
                 if attempt:  # every model failed — come back later, like a busy person would
                     delay = rand(C.RETRY_DELAY)
-                    log.info("Chat %s: models unavailable, retrying in %.0fs (%d/%d)",
-                             chat_id, delay, attempt, C.GENERATE_RETRIES)
+                    log.info("%s: models unavailable, retrying in %.0fs (%d/%d)",
+                             label(chat_id), delay, attempt, C.GENERATE_RETRIES)
                     await asyncio.sleep(delay)
                 async with client.action(chat_id, "typing"):
                     reply = await generate(history, contact)
                 if reply is not None:
                     break
             else:
-                log.warning("Chat %s: giving up, no model answered", chat_id)
+                log.warning("%s: giving up, no model answered", label(chat_id))
             reply = clean_reply(reply or "")
         if not reply:
             return
         if not looks_safe(reply):
-            log.warning("Chat %s: blocked suspicious reply (%d chars): %r", chat_id, len(reply), reply[:200])
+            log.warning("%s: blocked suspicious reply (%d chars): %r", label(chat_id), len(reply), reply[:200])
             return
         elapsed = time.monotonic() - started  # typing was already shown while generating
 
@@ -220,17 +236,17 @@ async def reply_flow(chat_id: int, contact: User):
             if i:
                 await asyncio.sleep(rand(C.BETWEEN_MESSAGES))
             async with client.action(chat_id, "typing"):
-                await asyncio.sleep(max(typing_time(part) - (elapsed if i == 0 else 0), 0.5))
+                await asyncio.sleep(max(typing_time(part) - (elapsed if i == 0 else 0), C.TYPING_LIMITS[0]))
             our_texts.setdefault(chat_id, []).append(part)
             sent = await client.send_message(chat_id, part)
             our_ids.add(sent.id)
             state.record_sent(chat_id, sent.id)
-        log.info("Chat %s: replied (%d chars)", chat_id, len(reply))
+        log.info("%s: replied (%d chars)", label(chat_id), len(reply))
     except asyncio.CancelledError:
-        log.info("Chat %s: reply cancelled", chat_id)
+        log.info("%s: reply cancelled", label(chat_id))
         raise
     except Exception:
-        log.exception("Chat %s: reply failed", chat_id)
+        log.exception("%s: reply failed", label(chat_id))
     finally:
         if pending.get(chat_id) is asyncio.current_task():
             pending.pop(chat_id)
@@ -261,7 +277,8 @@ async def on_command(event):
         state.set_paused(False)
         note = "▶️ auto-replies resumed"
     else:
-        note = (f"🤖 mode: {C.REPLY_MODE} | paused: {state.paused} | enabled chats: {len(state.enabled)}"
+        enabled = ", ".join([await resolve_name(cid) for cid in sorted(state.enabled)]) or "none"
+        note = (f"🤖 mode: {C.REPLY_MODE} | paused: {state.paused} | enabled chats: {enabled}"
                 + ("" if in_saved else " | this chat: {active}"))
 
     if "{chat}" in note or "{active}" in note:
@@ -280,7 +297,7 @@ async def on_outgoing(event):
         texts.remove(event.raw_text)
         return
     if event.chat_id in pending:
-        log.info("Chat %s: you replied yourself, standing down", event.chat_id)
+        log.info("%s: you replied yourself, standing down", label(event.chat_id))
         cancel(event.chat_id)
 
 
@@ -306,7 +323,8 @@ async def catch_up():
         if last and not last.out and time.time() - last.date.timestamp() < C.IGNORE_OLDER_THAN:
             contact = await last.get_sender()
             if isinstance(contact, User) and not contact.bot:
-                log.info("Chat %s: catching up on unanswered message", chat_id)
+                names[chat_id] = full_name(contact)
+                log.info("%s: catching up on unanswered message", label(chat_id))
                 pending[chat_id] = asyncio.create_task(reply_flow(chat_id, contact))
 
 
@@ -318,6 +336,8 @@ async def main():
     me = await client.get_me()
     log.info("Running as %s (@%s) | mode=%s | models=%s | paused=%s | enabled chats=%d",
              full_name(me), me.username, C.REPLY_MODE, C.MODELS, state.paused, len(state.enabled))
+    enabled = [await resolve_name(cid) for cid in sorted(state.enabled)]
+    log.info("Enabled chats: %s", ", ".join(enabled) or "none (type .ai on in a chat)")
     await catch_up()
     try:
         await client.run_until_disconnected()
