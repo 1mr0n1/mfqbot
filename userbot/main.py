@@ -101,10 +101,15 @@ def to_chat_messages(history) -> list[dict]:
     return messages
 
 
-def owner_quiet_in(history) -> float:
+def sent_by_us(chat_id: int, msg) -> bool:
+    # our_ids covers this run; state.bot_sent survives restarts
+    return msg.id in our_ids or state.sent_by_bot(chat_id, msg.id)
+
+
+def owner_quiet_in(chat_id: int, history) -> float:
     """Seconds until you've been silent in this chat for OWNER_ACTIVE_WINDOW (0 = you're not active)."""
     now = time.time()
-    last_manual = max((m.date.timestamp() for m in history if m.out and m.id not in our_ids), default=0)
+    last_manual = max((m.date.timestamp() for m in history if m.out and not sent_by_us(chat_id, m)), default=0)
     return max(last_manual + C.OWNER_ACTIVE_WINDOW - now, 0)
 
 
@@ -197,7 +202,7 @@ async def reply_flow(chat_id: int, contact: User):
         # (Your own new message in the chat cancels this task entirely.)
         while True:
             history = await client.get_messages(chat_id, limit=C.CONTEXT_MESSAGES)
-            wait = owner_quiet_in(history)
+            wait = owner_quiet_in(chat_id, history)
             if not wait:
                 break
             log.info("%s: you're active here, holding off %.0fs", label(chat_id), wait)
