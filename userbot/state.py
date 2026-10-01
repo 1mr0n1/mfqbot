@@ -12,6 +12,7 @@ class State:
         self.disabled: set[int] = set(data.get("disabled", []))
         self.manual: set[int] = set(data.get("manual", []))  # chats that are always left to you (with a note)
         self.paused: bool = data.get("paused", False)
+        self.approve: bool = data.get("approve", False)  # hold every draft until it's approved on the dashboard
         self.paused_until: float = data.get("paused_until", 0)  # temporary pause (unix time)
         # message ids the userbot sent, per chat — so style learning never mistakes them for yours
         self.bot_sent: dict[str, list[int]] = data.get("bot_sent", {})
@@ -27,7 +28,7 @@ class State:
     def save(self):
         STATE_PATH.write_text(json.dumps({
             "enabled": sorted(self.enabled), "disabled": sorted(self.disabled), "paused": self.paused,
-            "manual": sorted(self.manual),
+            "manual": sorted(self.manual), "approve": self.approve,
             "paused_until": self.paused_until, "bot_sent": self.bot_sent,
             "bio_history": self.bio_history, "last_bio_at": self.last_bio_at,
             "salam_stickers": self.salam_stickers, "pfp_changes": self.pfp_changes,
@@ -80,7 +81,15 @@ class State:
 
     def set_manual(self, chat_id: int):
         self.manual.add(chat_id)
+        self.disabled.discard(chat_id)
         self.save()
+
+    def set_approve(self, on: bool):
+        self.approve = on
+        self.save()
+
+    def mode_of(self, chat_id: int) -> str:
+        return "off" if chat_id in self.disabled else "manual" if chat_id in self.manual else "auto"
 
     def disable(self, chat_id: int):
         self.disabled.add(chat_id)

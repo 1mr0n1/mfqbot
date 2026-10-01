@@ -141,11 +141,20 @@ Name, surname and photo are only changed by you (`.ai …` commands or `python -
 
 ### Admin dashboard
 
-Open http://127.0.0.1:8000/admin while the backend and userbot run. It shows a live **decision log**
-(who wrote, why the bot waits or stays quiet, which model answered, what was blocked) and an
-**About to send** panel: every draft is held for 2–3 s (`DRAFT_HOLD`) with a Cancel button, then typed
-out with a human-length "typing…" indicator. Events live in memory only and the page is reachable
-only from this machine.
+Open http://127.0.0.1:8000/admin while the backend and userbot run.
+
+- **Decision log** — who wrote, why the bot waits or stays quiet, which model answered, what was blocked.
+- **About to send** — every draft appears before it goes out. Edit the text (one message per line) and press
+  **Send now**, or **Cancel**. Starting to type freezes that draft until you decide.
+- **Approve before sending** — a switch: nothing is sent until you press Send now (unapproved drafts are
+  dropped after 15 minutes).
+- **Chats** — per chat: mode (**Auto** / **Manual** = never answer, only tell you / **Off**), **Answer now**
+  (make the bot reply where it stayed silent: left to you, ignored, no reply needed), and a box to send your
+  own text with normal typing.
+- **Pause / Resume** for everything.
+
+Events live in memory only. The page can send messages from your account, and it has no password — it is
+reachable only from this machine; never expose port 8000.
 
 ### Teaching it your texting style
 

@@ -31,10 +31,30 @@ def new_draft_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+async def draft_state(draft_id: str) -> dict:
+    """What you did with this draft on the dashboard: {"cancelled", "send_now", "parts"}."""
+    try:
+        return (await _http.get(f"/admin/drafts/{draft_id}")).json()
+    except (httpx.HTTPError, ValueError):
+        return {}
+
+
 async def draft_cancelled(draft_id: str) -> bool:
     """True if you pressed Cancel on the dashboard for this draft."""
+    return bool((await draft_state(draft_id)).get("cancelled"))
+
+
+async def commands(after: int) -> tuple[int, list[dict]]:
+    """Commands typed/clicked on the dashboard since `after` -> (latest id, new commands)."""
     try:
-        resp = await _http.get(f"/admin/drafts/{draft_id}")
-        return bool(resp.json().get("cancelled"))
-    except (httpx.HTTPError, ValueError):
-        return False
+        data = (await _http.get("/admin/commands", params={"after": after})).json()
+        return data.get("latest", 0), data.get("commands", [])
+    except (httpx.HTTPError, ValueError, AttributeError):
+        return after, []
+
+
+async def report_status(status: dict):
+    try:
+        await _http.post("/admin/status", json=status)
+    except httpx.HTTPError:
+        pass

@@ -185,6 +185,10 @@ async def main():
     trace.draft_cancelled = _never_cancelled
     U.trace.emit, U.trace.draft_cancelled = _emit, _never_cancelled
 
+    async def _no_dashboard(draft_id):
+        return {}
+    trace.draft_state = _no_dashboard
+
     sem = asyncio.Semaphore(int(os.environ.get("SIM_PARALLEL", "3")))
 
     async def guarded(sc):

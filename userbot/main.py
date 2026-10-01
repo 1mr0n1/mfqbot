@@ -59,6 +59,8 @@ our_texts: dict[int, list[str]] = {}    # texts we're about to send, to recogniz
 our_ids: set[int] = set()               # message ids sent by the userbot (vs. typed by you)
 names: dict[int, str] = {}              # chat_id -> person's name, for logs
 background_tasks: set[asyncio.Task] = set()
+forced: set[int] = set()                # chats where you clicked "Answer now": skip hand-off / ignore / skip rules once
+contacts: dict[int, User] = {}          # chat_id -> the person, for dashboard actions
 me: User | None = None
 
 
@@ -456,6 +458,23 @@ async def remember_later(chat_id: int, who: str, their_messages: list[str]):
         log.exception("%s: remembering failed", who)
 
 
+async def hold_draft(draft_id: str, hold: float) -> tuple[str, list[str] | None]:
+    """Keep the draft on the dashboard for `hold` seconds — or, in approve mode, until you decide.
+
+    -> ("send", edited parts or None) | ("cancelled", None) | ("expired", None)"""
+    started = time.monotonic()
+    while True:
+        st = await trace.draft_state(draft_id)
+        if st.get("cancelled"):
+            return "cancelled", None
+        if st.get("send_now"):
+            return "send", st.get("parts")
+        waiting_for_you = state.approve or st.get("editing")  # you're deciding: don't send on a timer
+        if time.monotonic() - started >= (C.APPROVE_TIMEOUT if waiting_for_you else hold):
+            return ("expired", None) if waiting_for_you else ("send", st.get("parts"))
+        await asyncio.sleep(0.4)
+
+
 def pacing_on() -> bool:
     return bool(C.TYPING_LIMITS[1])  # USERBOT_HUMAN_PACING
 
@@ -501,6 +520,9 @@ async def no_text_reply(chat_id: int, who: str, action: str, history):
 async def reply_flow(chat_id: int, contact: User):
     global me
     who = names[chat_id] = full_name(contact)
+    contacts[chat_id] = contact
+    force = chat_id in forced  # you clicked "Answer now": answer even what would be handed off, ignored or skipped
+    forced.discard(chat_id)
     draft_id, history, failed = None, None, False
     try:
         me = await client.get_me()  # profile may have been changed from outside (userbot.profile)
@@ -534,13 +556,13 @@ async def reply_flow(chat_id: int, contact: User):
                                if m.raw_text)
 
         # Questions about who/what is answering are simply ignored — they are not a reason to hand the chat over.
-        identity = identity_question(history)
+        identity = None if force else identity_question(history)
         reason = (await judge.sensitive_reason(http, full_name(me), history, keywords_only=identity is not None)
-                  if C.HANDOFF else None)
-        if not reason and chat_id in state.manual:
+                  if C.HANDOFF and not force else None)
+        if not reason and chat_id in state.manual and not force:
             reason = "this chat is set to manual (.ai on to change)"
-        if not reason and C.HANDOFF and not contact_style_path(contact) and TEACHER_RE.search(their_text) \
-                and not judge.closer_action(history):
+        if not reason and C.HANDOFF and not force and not contact_style_path(contact) \
+                and TEACHER_RE.search(their_text) and not judge.closer_action(history):
             reason = "a formal message (teacher / official) — better answered by you"
         if reason:  # this one is yours: don't answer, don't even mark it read
             state.hand_off(chat_id, C.HANDOFF_HOLD)
@@ -593,7 +615,8 @@ async def reply_flow(chat_id: int, contact: User):
                 return
 
         action = (judge.closer_action(history)
-                  if C.SMART_SKIP and not greeting.reply and not greeting.sticker and not photo_msg else None)
+                  if C.SMART_SKIP and not force and not greeting.reply and not greeting.sticker and not photo_msg
+                  else None)
         if action and quirks.is_formal(history) and re.search(r"до\s+свидания|всего\s+доброго|xayr", their_text, re.I):
             our_texts.setdefault(chat_id, []).append("До свидания")
             sent = await client.send_message(chat_id, "До свидания")
@@ -751,8 +774,21 @@ async def reply_flow(chat_id: int, contact: User):
             trace.emit("decision", who, f"Reading ~{read:.0f}s, thinking ~{think:.0f}s before typing")
         else:
             hold = 0
-        trace.emit("draft", who, "\n".join(parts), draft_id=draft_id, parts=parts, hold=hold)
-        await asyncio.sleep(hold)
+        trace.emit("draft", who, "\n".join(parts), draft_id=draft_id, parts=parts, hold=hold, approve=state.approve)
+        verdict, edited = await hold_draft(draft_id, hold)
+        if verdict == "cancelled":
+            log.info("%s: draft cancelled from the dashboard", who)
+            trace.emit("cancelled", who, "You cancelled this draft on the dashboard", draft_id=draft_id)
+            return
+        if verdict == "expired":
+            log.info("%s: draft not approved in time, dropped", who)
+            trace.emit("cancelled", who, f"Nobody approved this draft within {C.APPROVE_TIMEOUT // 60} min — dropped",
+                       draft_id=draft_id)
+            failed = True  # still unanswered: it stays yours
+            return
+        if edited:  # you rewrote it on the dashboard: send exactly that
+            parts, from_model = edited, False
+            trace.emit("decision", who, "Sending your edited version", draft_id=draft_id)
 
         quote = quirks.reply_target(history)          # swipe-reply to a specific message when that's natural
         slips = from_model and not quirks.is_formal(history)  # typos only in casual chats, never in fixed replies
@@ -1084,6 +1120,7 @@ async def on_incoming(event):
     if state.handed_off(event.chat_id):
         trace.emit("decision", who, "Still leaving this chat to you (handed off earlier)")
         return
+    contacts[event.chat_id] = sender
     cancel(event.chat_id)  # a new message restarts the wait, so bursts get one reply
     pending[event.chat_id] = asyncio.create_task(reply_flow(event.chat_id, sender))
 
@@ -1138,11 +1175,13 @@ async def group_reply_flow(event, sender: User):
             return
         draft_id = trace.new_draft_id()
         hold = max(rhythm.thinking_seconds(text, reply, chat_id), C.MIN_HOLD) if pacing_on() else 0
-        trace.emit("draft", who, reply, draft_id=draft_id, parts=[reply], hold=hold)
-        await asyncio.sleep(hold)
-        if await trace.draft_cancelled(draft_id):
-            trace.emit("cancelled", who, "You cancelled this draft on the dashboard", draft_id=draft_id)
+        trace.emit("draft", who, reply, draft_id=draft_id, parts=[reply], hold=hold, approve=state.approve)
+        verdict, edited = await hold_draft(draft_id, hold)
+        if verdict != "send":
+            trace.emit("cancelled", who, "Draft cancelled or not approved", draft_id=draft_id)
             return
+        if edited:
+            reply = "\n".join(edited)
         trace.emit("decision", who, "Typing…", draft_id=draft_id, phase="typing", index=0)
         await type_like_a_person(chat_id, reply)
         our_texts.setdefault(chat_id, []).append(reply)
@@ -1176,6 +1215,97 @@ async def on_group_mention(event):
         return
     cancel(event.chat_id)
     pending[event.chat_id] = asyncio.create_task(group_reply_flow(event, sender))
+
+
+def chat_by_name(name: str) -> int | None:
+    return next((cid for cid, n in names.items() if n == name), None)
+
+
+async def run_command(cmd: dict):
+    """Something you clicked on the dashboard."""
+    kind, name = cmd.get("type"), cmd.get("chat", "")
+    chat_id = chat_by_name(name) if name else None
+    if kind == "pause":
+        state.set_paused(True)
+        for cid in list(pending):
+            cancel(cid)
+        trace.emit("system", "", "Paused from the dashboard — no replies until you resume")
+    elif kind == "resume":
+        state.set_paused(False)
+        trace.emit("system", "", "Resumed from the dashboard")
+        spawn(reply_to_unread())
+    elif kind == "approve":
+        state.set_approve(cmd.get("value") == "on")
+        trace.emit("system", "", "Approve-before-sending is ON: every draft waits for you" if state.approve
+                   else "Approve-before-sending is OFF: drafts send by themselves")
+    elif chat_id is None:
+        trace.emit("warning", name, "Dashboard action ignored — I don't know that chat yet")
+    elif kind == "mode":
+        mode = cmd.get("value")
+        if mode == "off":
+            state.disable(chat_id)
+            state.manual.discard(chat_id)
+            state.save()
+            cancel(chat_id)
+        elif mode == "manual":
+            state.set_manual(chat_id)
+            cancel(chat_id)
+        else:
+            state.disabled.discard(chat_id)
+            state.manual.discard(chat_id)
+            state.save()
+        trace.emit("system", name, f"Chat mode set to {mode} from the dashboard")
+    elif kind == "answer":  # overrule a hand-off / ignored question / skipped message
+        contact = contacts.get(chat_id)
+        if not contact:
+            contact = await client.get_entity(chat_id)
+        state.clear_handoff(chat_id)
+        forced.add(chat_id)
+        cancel(chat_id)
+        trace.emit("decision", name, "You asked for an answer — writing one now")
+        pending[chat_id] = asyncio.create_task(reply_flow(chat_id, contact))
+    elif kind == "say" and cmd.get("text", "").strip():  # your own words, sent with normal typing
+        text = cmd["text"].strip()
+        cancel(chat_id)
+        state.clear_handoff(chat_id)
+        trace.emit("decision", name, "Sending the text you wrote on the dashboard")
+        await client.send_read_acknowledge(chat_id)
+        await type_like_a_person(chat_id, text)
+        our_texts.setdefault(chat_id, []).append(text)
+        sent = await client.send_message(chat_id, text)
+        our_ids.add(sent.id)
+        state.record_sent(chat_id, sent.id)
+        state.mark_handled(chat_id, (await client.get_messages(chat_id, limit=1))[0].id)
+        trace.emit("sent", name, text)
+        daylog.record("replied", name, text, them="(you wrote this on the dashboard)")
+
+
+async def command_loop():
+    """Poll the dashboard for clicks, and tell it what state the account is in."""
+    last, _ = await trace.commands(10**9)  # start from "now": don't replay old commands
+    beat = 0
+    while True:
+        await asyncio.sleep(1)
+        latest, new = await trace.commands(last)
+        if latest < last:  # the backend restarted and its ids started over
+            last = 0
+            continue
+        for cmd in new:
+            last = max(last, cmd["id"])
+            try:
+                await run_command(cmd)
+            except Exception:
+                log.exception("Dashboard command failed: %r", cmd)
+                trace.emit("warning", cmd.get("chat", ""), "That dashboard action failed (see the userbot log)")
+        beat += 1
+        if beat % 3 == 0 or new:
+            known = set(names) | state.disabled | state.manual
+            await trace.report_status({
+                "account": full_name(me), "paused": state.is_paused(), "approve": state.approve,
+                "asleep": rhythm.asleep(), "busy": rhythm.busy(), "models": C.MODELS, "mode": C.REPLY_MODE,
+                "chats": sorted(({"name": names.get(cid, str(cid)), "mode": state.mode_of(cid),
+                                  "waiting": cid in pending, "held": state.handed_off(cid)}
+                                 for cid in known if cid in names), key=lambda c: c["name"].lower())})
 
 
 async def summary_loop():
@@ -1249,10 +1379,15 @@ async def main():
     else:
         enabled = [await resolve_name(cid) for cid in sorted(state.enabled)]
         log.info("Enabled chats: %s", ", ".join(enabled) or "none (type .ai on in a chat)")
+    async for dialog in client.iter_dialogs(limit=40):  # so the dashboard can act on recent chats right away
+        if isinstance(dialog.entity, User) and not dialog.entity.bot and not dialog.entity.is_self \
+                and dialog.entity.id != TELEGRAM_SERVICE_ID:
+            names[dialog.id] = full_name(dialog.entity)
+            contacts[dialog.id] = dialog.entity
     trace.emit("system", "", f"Userbot started as {full_name(me)} — mode: {C.REPLY_MODE}, models: {', '.join(C.MODELS)}")
     await reply_to_unread()
     background = [asyncio.create_task(bio_loop(client, state)), asyncio.create_task(unread_loop()),
-                  asyncio.create_task(summary_loop())]
+                  asyncio.create_task(summary_loop()), asyncio.create_task(command_loop())]
     try:
         await client.run_until_disconnected()
     finally:
