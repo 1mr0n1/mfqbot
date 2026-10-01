@@ -32,11 +32,13 @@ def text_only(messages: list[dict]) -> list[dict]:
 
 
 async def complete(client: httpx.AsyncClient, model: dict, messages: list[dict],
-                   max_tokens: int = MAX_TOKENS, reasoning: bool = False) -> str:
+                   max_tokens: int = MAX_TOKENS, reasoning: bool = False, temperature: float | None = None) -> str:
     provider = PROVIDERS[model["provider"]]
     if not model.get("vision"):
         messages = text_only(messages)
     payload = {"model": model["id"], "messages": messages, "max_tokens": max_tokens}
+    if temperature is not None:
+        payload["temperature"] = temperature
     if not reasoning:
         payload |= model.get("no_think", {})
     headers = {"Authorization": f"Bearer {provider['api_key']}"}

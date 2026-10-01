@@ -34,6 +34,7 @@ ACTIVE_CHAT_SECONDS = 240        # after a reply the chat counts as an ongoing c
 ONLINE_LINGER = (15, 60)         # seconds to stay "online" after doing something
 
 # Small human touches (see quirks.py)
+TEMPERATURE = float(os.environ.get("USERBOT_TEMPERATURE", "0.5"))  # lower = steadier wording, fewer made-up words
 EMOJI_KEEP_CHANCE = float(os.environ.get("USERBOT_EMOJI_CHANCE", "0.04"))  # share of replies allowed to keep ONE emoji
 TYPO_CHANCE = float(os.environ.get("USERBOT_TYPO_CHANCE", "0.06"))  # share of messages sent with a typo, then fixed
 QUOTE_IF_OLDER_THAN = 3600       # answering something this old (seconds): quote it

@@ -120,8 +120,13 @@ Name, surname and photo are only changed by you (`.ai …` commands or `python -
   the machine) and answered like text.
 - **Quoting and typos** — it swipe-replies to a specific message when several were sent or the message is old;
   ~6% of casual messages go out with a typo that is then edited or fixed with a `*word`.
-- **Your punctuation** — measured from your own messages (how often you end with a period, use commas,
-  actually type the "?") and applied to every model-written reply; per person when they have a style file.
+- **Your punctuation** — commas stay, sentences are joined with a comma, no period at the end, "!" is rare;
+  rates are measured from your own messages (per person when they have a style file).
+- **Short like you** — a reply longer than about twice your usual long message is rewritten shorter and, if
+  needed, cut at a clause boundary; replies are generated at a low temperature (`USERBOT_TEMPERATURE`, 0.5)
+  to keep wording steady.
+- **Closing messages get a reaction** — "ok", "спасибо", "пока", "спокойной ночи"… after your message are
+  answered with 👍 or ❤ instead of more text.
 - **Almost no emoji** — emoji are stripped from replies (`USERBOT_EMOJI_CHANCE` keeps one, rarely); reactions
   are only 👍 or ❤.
 - **Evening summary** — a digest in Saved Messages at `USERBOT_SUMMARY_TIME` (`.ai summary` for one now).

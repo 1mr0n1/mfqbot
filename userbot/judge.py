@@ -16,33 +16,61 @@ from . import config as C
 log = logging.getLogger("userbot.judge")
 
 # ---------- messages that don't need a reply ----------
-CLOSER_RE = re.compile(
-    r"^(ok+(ay)?|k+|kk|okey|oki|ок+|окей|ага|угу|ладно|понял[а]?|ясно|хорошо|хоп|хор|норм|давай|спс|спасибо|пасиб"
-    r"|xop|hop|mayli|bo'?ldi|rahmat|raxmat|tushunarli|ha+|yes|yep|yeah|sure|thx|thanks|ty|got it|alr(ight)?|bet|lol"
-    r"|lmao|haha+|ahah+|хаха+|ахах+|аха+|\)+|👍|👌|🙏|❤️?|😂|🤣|😅|😁|🔥|💯)[\s.!)]*$", re.I)
+ACK_WORDS = set("""ok okay okey oki k kk ок окей оке окк ага угу ладно лан понял поняла понятно ясно хорошо хоп хор норм
+ нормально договорились отлично супер круто класс xop hop mayli bo'ldi boldi tushunarli ha yes yep yeah yea sure got it
+ alr alright aight bet fine cool nice good да даа ну и all right""".split())
+THANKS_WORDS = set("""спс спасибо пасиб спасибки благодарю rahmat raxmat рахмат thx thanks thank you ty tysm большое
+ катта katta""".split())
+BYE_WORDS = set("""пока покеда пакеда давай до завтра встречи связи свидания увидимся спокойной ночи споки сладких снов
+ доброй bye byee goodbye gn night good see you ya cya later ttyl take care xayr hayr ko'rishguncha korishguncha
+ yaxshi dam ol oling tun tuning хайр""".split())
+LAUGH_RE = re.compile(r"^(lol|lmao|lmfao|п?[ахaxh]{4,}|\)+)$", re.I)
+# how people address each other — doesn't change what kind of message it is
+VOCATIVE = set("""bro бро брат братан братишка чел друг dude man aka uka opa opajon oyijon dadajon мам мама пап папа
+ дядя тётя jigar jiga do'stim dostim""".split())
 EMOJI_ONLY_RE = re.compile(r"^[\W\d_]*$")  # no letters at all: emoji, punctuation
 REACTIONS = ["👍", "❤"]  # the only reactions the account uses
 
 
+def _closer_kind(text: str) -> str | None:
+    """-> 'thanks' | 'bye' | 'ack' | 'laugh' | 'emoji' if the whole message is just that, else None."""
+    text = text.strip()
+    if not text or EMOJI_ONLY_RE.match(text):
+        return "emoji"
+    words = [w for w in re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)*", text.lower()) if w not in VOCATIVE]
+    if "?" in text or len(words) > 6:
+        return None
+    if not words:
+        return "ack"
+    if all(LAUGH_RE.match(w) for w in words):
+        return "laugh"
+    if not all(w in ACK_WORDS or w in THANKS_WORDS or w in BYE_WORDS or LAUGH_RE.match(w) for w in words):
+        return None
+    if any(w in BYE_WORDS for w in words) and not all(w in ACK_WORDS for w in words):
+        return "bye"
+    if any(w in THANKS_WORDS for w in words):
+        return "thanks"
+    return "ack"
+
+
 def closer_action(history) -> str | None:
-    """-> 'skip', 'react:<emoji>' or None (= answer normally). Only when they're closing after YOUR message."""
+    """-> 'react:<emoji>' or None (= answer normally). Only when they're closing after YOUR message.
+
+    Someone wrapping up ("ok", "спасибо", "пока", "спокойной ночи") gets a reaction instead of more text."""
     unanswered = list(itertools.takewhile(lambda m: not m.out, history))
-    if not unanswered or len(unanswered) > 2 or len(history) == len(unanswered):
-        return None  # nothing new, a burst, or they opened the conversation
+    if not unanswered or len(unanswered) > 3 or len(history) == len(unanswered):
+        return None  # nothing new, a real burst, or they opened the conversation
+    kinds = []
     for msg in unanswered:
-        text = (msg.raw_text or "").strip()
-        if msg.photo or msg.voice or msg.video or msg.video_note or msg.document and not msg.sticker:
+        if msg.photo or msg.voice or msg.video or msg.video_note or (msg.document and not msg.sticker):
             return None
-        if text and not (CLOSER_RE.match(text) or EMOJI_ONLY_RE.match(text)):
+        kind = "emoji" if msg.sticker else _closer_kind(msg.raw_text or "")
+        if not kind:
             return None
-        if "?" in text:
-            return None
-    last = (unanswered[0].raw_text or "").strip().lower()
-    if re.match(r"^(спс|спасибо|пасиб|rahmat|raxmat|thx|thanks|ty)", last):
-        return random.choice(["react:❤", "react:👍", "skip"])
-    if re.match(r"^(lol|lmao|haha|ahah|хаха|ахах|аха|😂|🤣)", last):
-        return random.choice(["react:👍", "skip", "skip"])
-    return random.choice(["skip", "skip", "react:👍"])
+        kinds.append(kind)
+    if "thanks" in kinds or "bye" in kinds:
+        return "react:❤" if "thanks" in kinds or random.random() < 0.4 else "react:👍"
+    return "react:👍"
 
 
 def may_skip(history) -> bool:
@@ -81,12 +109,13 @@ STRONG = [
                      r"|авари\w*|полици\w*|умер(ла)?|kasalxona\w*|tez yordam|avariya|vafot|zudlik|shoshilinch"),
 ]
 CLASSIFY = (
-    "Below are the latest messages someone sent to their friend or relative {name} in a private chat. Should {name} "
-    "answer these PERSONALLY instead of sending a casual quick reply? Answer PERSONAL only if it is clearly one of: "
-    "they are upset, angry, hurt, crying or want a serious talk; a fight or accusation; romantic or relationship matters; "
-    "health problems or bad news; trouble at school, work or with the law; a request for a real decision or commitment "
-    "that matters (not small everyday things); anything where a careless answer could hurt them. "
-    "Everyday chat, jokes, simple questions, greetings, homework or factual questions, small favors: NORMAL.\n"
+    "Below are the latest messages someone sent to their friend or relative {name} in a private chat. Decide whether "
+    "{name} must answer PERSONALLY. Answer PERSONAL only for something clearly serious: the person is in real distress "
+    "(crying, panicking, saying they are deeply hurt), a serious fight or breaking off contact, romantic or relationship "
+    "talk, illness, injury, death or other bad news, trouble with police, school administration or the law.\n"
+    "Everything else is NORMAL — including teasing, banter, jokes, mild complaints or reproaches ('you didn't reply', "
+    "'you didn't do it'), embarrassing or silly stories, everyday plans and logistics, favors, questions, greetings. "
+    "When in doubt, answer NORMAL.\n"
     "Answer with one word, PERSONAL or NORMAL, then a dash and the reason in at most 6 words.\n\nMESSAGES:\n{messages}"
 )
 
@@ -105,7 +134,7 @@ async def sensitive_reason(http: httpx.AsyncClient, name: str, history, keywords
     try:
         resp = await http.post("/complete", json={
             "messages": [{"role": "user", "content": CLASSIFY.format(name=name, messages=joined[:1500])}],
-            "models": C.MODELS, "max_tokens": 30})
+            "models": C.MODELS, "max_tokens": 30, "temperature": 0})
     except httpx.HTTPError:
         return None
     if resp.is_error:
@@ -183,7 +212,7 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
         resp = await http.post("/complete", json={
             "messages": [{"role": "user", "content": REVIEW.format(them=them[:800] or "(a photo or sticker)",
                                                                    draft=text[:800], lang=hint)}],
-            "models": C.MODELS, "max_tokens": 30})
+            "models": C.MODELS, "max_tokens": 30, "temperature": 0})
     except httpx.HTTPError:
         return None
     if resp.is_error:

@@ -43,6 +43,7 @@ class CompleteRequest(BaseModel):
     models: list[str] = list(MODELS)  # tried in order until one succeeds
     max_tokens: int = Field(MAX_TOKENS, ge=1, le=16384)  # reasoning models spend part of this thinking
     reasoning: bool = False  # let the model think first (slower; for analysis jobs, not chat replies)
+    temperature: float | None = Field(None, ge=0, le=2)  # lower = more predictable, fewer made-up words
 
 
 @app.get("/health")
@@ -104,7 +105,8 @@ async def complete_stateless(req: CompleteRequest):
     error = None
     for key in order:
         try:
-            reply = await complete(app.state.http, MODELS[key], messages, req.max_tokens, req.reasoning)
+            reply = await complete(app.state.http, MODELS[key], messages, req.max_tokens, req.reasoning,
+                                   req.temperature)
             return ChatResponse(reply=reply, model=key)
         except LLMError as e:
             error = e

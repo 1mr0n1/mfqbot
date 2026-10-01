@@ -34,28 +34,24 @@ def measure(messages: list[str]) -> dict:
 
 
 def apply(text: str, p: dict | None = None) -> str:
-    """Make one message's punctuation look typed-on-a-phone according to the measured rates."""
+    """Phone-typed punctuation: commas stay, sentences are joined with a comma, no period at the end."""
     p = p or DEFAULT
     if not text or text.startswith("["):
         return text
     out = text.strip()
-    out = re.sub(r"\s*[—–]\s*", ", " if random.random() < p["comma_long"] else " ", out) if random.random() >= p["dash"] * 5 else out
+    out = re.sub(r"\s*[—–]\s*", ", ", out)
     out = out.replace(";", ",").replace("«", "").replace("»", "")
-    if random.random() >= p["comma_long"]:           # most messages: no commas at all
-        out = out.replace(",", "")
     if random.random() >= p["exclaim"] * 3:          # "!" is rare
-        out = re.sub(r"!+\s+([^\W\d_])", lambda m: " " + m.group(1).lower(), out)
+        out = re.sub(r"!+\s+([^\W\d_])", lambda m: ", " + m.group(1).lower(), out)
         out = re.sub(r"!+", "", out)
     out = re.sub(r"\?{2,}", "?", out)
-    if out.endswith("?") and random.random() >= p["question_mark"]:
-        out = out[:-1]                               # a question typed without its "?"
-    # inner sentence periods: "Нет. Сделаю позже." -> "Нет сделаю позже" (or keep the break as a comma sometimes)
-    out = re.sub(r"(?<=[^\W\d_])\.\s+([^\W\d_])",
-                 lambda m: (", " if random.random() < p["comma_long"] / 2 else " ") + m.group(1).lower(), out)
+    # "Нет. Сделаю позже." -> "Нет, сделаю позже"
+    out = re.sub(r"(?<=[^\W\d_])\.\s+([^\W\d_])", lambda m: ", " + m.group(1).lower(), out)
     if out.endswith(".") and not out.endswith("..") and random.random() >= p["period_end"]:
         out = out[:-1]
     if random.random() >= p["ellipsis"] * 3:
         out = re.sub(r"\.{2,}|…", "", out)
+    out = re.sub(r"\s+,", ",", re.sub(r",\s*,", ",", out))
     out = re.sub(r"\s{2,}", " ", out).strip(" ,")
     if out and out[0].isalpha():                     # phone keyboards capitalize the first letter; you mostly leave it
         out = (out[0].upper() if random.random() < p["upper_start"] else out[0].lower()) + out[1:]

@@ -28,6 +28,29 @@ def reply_target(history):
     return None
 
 
+EXPLAIN_RE = re.compile(r"почему|зачем|объясни|расскажи|как\s+(сделать|это|работает)|что\s+такое|why|explain|how\s+(do|does|to)|what\s+is|"
+                        r"nega|tushuntir|qanday\s+qil", re.I)
+
+
+def length_limits(stats: dict, their_text: str) -> tuple[int, int]:
+    """(max characters per message, max messages) for a reply, from how long your real messages are."""
+    p90 = (stats.get("length_chars") or {}).get("p90", 30)
+    per_message = max(45, int(p90 * 2))
+    if EXPLAIN_RE.search(their_text):     # they asked for an explanation: a bit more room
+        per_message = int(per_message * 2)
+    return per_message, 2
+
+
+def shorten(part: str, limit: int) -> str:
+    """Cut an over-long message at the last clause boundary that fits."""
+    if len(part) <= limit:
+        return part
+    cut = part[:limit]
+    boundary = max(cut.rfind(", "), cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
+    cut = cut[:boundary] if boundary >= limit * 0.4 else cut[:cut.rfind(" ")] if " " in cut else cut
+    return cut.rstrip(" ,.")
+
+
 def is_formal(history) -> bool:
     return any(FORMAL_RE.search(m.raw_text or "") for m in itertools.takewhile(lambda m: not m.out, history))
 

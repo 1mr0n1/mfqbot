@@ -297,14 +297,17 @@ def contact_style_block(path, incoming: str) -> str:
     return block
 
 
-def punct_profile(contact: User) -> dict:
-    """Your measured punctuation habits: with this person if they have a style file, otherwise in general."""
+def style_stats(contact: User) -> dict:
+    """Your measured habits (lengths, punctuation): with this person if they have a style file, else in general."""
     try:
         path = contact_style_path(contact)
-        stats = json.loads(path.read_text())["stats"] if path else json.loads((C.STYLE_DIR / "stats.json").read_text())
-        return stats.get("punct") or punct.DEFAULT
+        return json.loads(path.read_text())["stats"] if path else json.loads((C.STYLE_DIR / "stats.json").read_text())
     except (OSError, ValueError, KeyError):
-        return punct.DEFAULT
+        return {}
+
+
+def punct_profile(contact: User) -> dict:
+    return style_stats(contact).get("punct") or punct.DEFAULT
 
 
 def style_block(contact_name: str = "", incoming: str = "", contact: User | None = None) -> str:
@@ -392,7 +395,7 @@ async def generate(history, contact: User, extra: str = "") -> str | None:
     system += extra  # what just happened outside the conversation (e.g. a profile photo change)
     try:
         resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS,
-                                                  "max_tokens": 300})
+                                                  "max_tokens": 200, "temperature": C.TEMPERATURE})
     except httpx.HTTPError as e:
         log.warning("Backend unreachable: %r", e)
         return None
@@ -591,7 +594,28 @@ async def reply_flow(chat_id: int, contact: User):
 
         allow_media = C.MEDIA_ENABLED and not contact_style_path(contact)
         parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
-        if from_model:  # the model punctuates like a textbook; you don't
+        if from_model:
+            # You text short. A rambling draft is rewritten once, then cut down if it's still too long.
+            limit, max_parts = quirks.length_limits(style_stats(contact), their_text)
+            text_parts = [p for p in parts if not media.MEDIA_LINE_RE.match(p)]
+            if any(len(p) > limit for p in text_parts) or len(text_parts) > max_parts + 1:
+                trace.emit("decision", who, f"Draft too long ({max(map(len, text_parts))} chars) — rewriting it shorter")
+                words = max(4, limit // 7)
+                shorter = clean_reply(await generate(history, contact, hint + (
+                    f"\nYour draft was far too long. You text in very short messages: answer in at most {words} "
+                    "words, one message, no explanations and no story.\n")) or "")
+                if shorter and looks_safe(shorter):
+                    reply = shorter
+                    parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+                text_seen, kept = 0, []
+                for p in parts:  # whatever is left: at most max_parts short messages
+                    if media.MEDIA_LINE_RE.match(p):
+                        kept.append(p)
+                    elif text_seen < max_parts:
+                        kept.append(quirks.shorten(p, limit))
+                        text_seen += 1
+                parts = kept
+            # the model punctuates like a textbook; you don't
             habits = punct_profile(contact)
             parts = [p if media.MEDIA_LINE_RE.match(p) else punct.apply(p, habits) for p in parts]
             parts = [p for p in parts if p]
