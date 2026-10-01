@@ -29,6 +29,8 @@ LAUGH_RE = re.compile(r"^(lo+l|lma+o+|lmfa+o+|п?[ахaxh]{4,}|\)+)$", re.I)
 VOCATIVE = set("""bro бро брат братан братишка чел друг dude man aka uka opa opajon oyijon dadajon мам мама пап папа
  дядя тётя jigar jiga do'stim dostim""".split())
 EMOJI_ONLY_RE = re.compile(r"^[\W\d_]*$")  # no letters at all: emoji, punctuation
+# fillers that say nothing ("idk", "ааа", "ого", "хм"): nothing to answer, and no reaction either
+FILLER_RE = re.compile(r"^(а+|о+|э+|м+|у+|хм+|гм+|ну+|ого+|ух+|эх+|ясн\w*|понятн\w*|idk|uh+|um+|hm+|oh+|ah+|mm+|eh+|aa+|oo+)$", re.I)
 REACTIONS = ["👍", "❤"]  # the only reactions the account uses
 
 
@@ -46,6 +48,8 @@ def _closer_kind(text: str) -> str | None:
         return "ack"
     if all(LAUGH_RE.match(w) for w in words):
         return "laugh"
+    if all(FILLER_RE.match(w) or w in ("бля", "блин", "капец", "жесть", "damn", "bruh") for w in words) and len(words) <= 3:
+        return "filler"
     if not all(w in ACK_WORDS or w in THANKS_WORDS or w in BYE_WORDS or LAUGH_RE.match(w) for w in words):
         return None
     if any(w in BYE_WORDS for w in words) and not all(w in ACK_WORDS for w in words):
@@ -62,6 +66,9 @@ def closer_action(history) -> str | None:
     unanswered = list(itertools.takewhile(lambda m: not m.out, history))
     if not unanswered or len(unanswered) > 3:
         return None  # nothing new, or a real burst
+    from . import salam
+    if all(salam.is_response(m.raw_text or "") and len(salam.remainder(m.raw_text or "").split()) < 3 for m in unanswered):
+        return "skip"  # they answered your greeting; nothing to add
     kinds = []
     for msg in unanswered:
         if msg.photo or msg.voice or msg.video or msg.video_note or (msg.document and not msg.sticker):
@@ -70,6 +77,8 @@ def closer_action(history) -> str | None:
         if not kind:
             return None
         kinds.append(kind)
+    if all(k == "filler" for k in kinds):
+        return "skip"
     if "thanks" in kinds or "bye" in kinds:
         return "react:❤" if "thanks" in kinds or random.random() < 0.4 else "react:👍"
     return "react:👍"
@@ -94,7 +103,7 @@ STRONG = [
      r"\b(otp|password|passcode)\b|парол\w*|\bparol\w*"
      r"|(sms|смс|verification|login|confirm\w*|подтвержд\w*|tasdiq\w*)\W+(\w+\W+){0,3}(code|код|kod)\b"
      r"|\b(code|код|kod)\b\W+(\w+\W+){0,3}(sms|смс|пришл\w*|прислал\w*|отправ\w*|скин\w*|keldi|yubor\w*|ayt\w*|came|sent)"),
-    ("money", r"\b(lend|borrow|loan|owe|debt|pay me|send me \$?\d|transfer|cash ?app|paypal)\b|\$\s?\d{2,}|\d{2,}\s?(\$|usd|сум|sum|so'm|som|руб|k\b|к\b)"
+    ("money", r"\b(lend|borrow|loan|owe|debt|pay me|send me \$?\d|transfer|cash ?app|paypal)\b|\$\s?\d{2,}|\d{2,}\s?(\$|usd|сум|sum|so'm|som|руб|k\b|к\b)|\d+\s?(млн|тыс|mln|ming|млрд)\w*"
               r"|\bзаня(ть|л|ла)\b|\bзайм\w*|\bдолж(ен|на|ок)\b"
               r"|в\s*долг|одолжи\w*|займи\w*|перевед\w*|скинь\s+(деньг|на карт)|на карту|деньг\w*|\bqarz\w*|\bpul\w*\s+(ber|kerak|tashla|o'tkaz)|kartaga"),
     ("an emergency", r"\b(emergency|hospital|ambulance|accident|police|urgent(ly)?|asap|died|passed away)\b|срочно|больниц\w*|скор(ая|ую)"
@@ -275,14 +284,15 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
 
 # ---------- things the account must not decide or claim on its own ----------
 PLAN_RE = re.compile(
-    r"\bго\b|пойд[её]шь|ид[её]шь|прид[её]шь|зайд[её]шь|приедешь|встрет\w*|давай\s+(в|на|завтра|сегодня|после)|поможешь|принес\w*|"
+    r"\bго\b|пойд[её]шь|ид[её]шь|прид[её]шь|зайд[её]шь|приедешь|когда\s+(буд|прид|приед|вый|зайд)\w+|через\s+сколько|"
+    r"set\s+(me|up)|can\s+(you|u)\s+(set|send|give|buy|get)|встрет\w*|давай\s+(в|на|завтра|сегодня|после)|поможешь|принес\w*|"
     r"отдашь|ждём|ждем|выходи|подойд[её]шь|переночу\w*|купи\w*|позвони\w*|забери\w*|сходи\w*|съезди\w*|приезжай\w*|"
     r"приходи\w*|заходи\w*|отнеси\w*|верни\w*|оплати\w*|закажи\w*|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
     r"\b(wanna|coming|come\s+(over|to)|meet|bring|let'?s)\b|kelasan\w*|borasan\w*|chiqasan\w*|uchrash\w*|olib\s+kel", re.I)
 COMMIT_RE = re.compile(
     r"\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|переночую|куплю|"
     r"позвоню|заберу|схожу|съезжу|отнесу|верну|оплачу|закажу|поеду|пойду|"
-    r"го|погнали|заходи|выхожу|иду|еду)\b|\bв\s+\d{1,2}([:.]\d\d)?\b|\b(давай|ок|окей|хорошо|да|конечно)\b[\s,]+\b(приду|буду|зайду|го|давай|помогу)\b|"
+    r"го|погнали|заходи|выхожу|иду|еду)\b|\bв\s+\d{1,2}([:.]\d\d)?\b|\bчерез\s+(час|пол\w*|минут\w*|\d+)|\bжду\b|\b(sure|ok|okay|yeah),?\s+(do|i'?ll|will|done)\b|\b(давай|ок|окей|хорошо|да|конечно)\b[\s,]+\b(приду|буду|зайду|го|давай|помогу)\b|"
     r"\b(i'?ll\s+(come|be|bring|help)|coming|on\s+my\s+way|let'?s\s+go|sure\s+let'?s|yeah\s+let'?s|im\s+down)\b|"
     r"\b(kelaman|boraman|chiqaman|olib\s+kelaman|xop\s+kelaman)\b", re.I)
 DID_RE = re.compile(

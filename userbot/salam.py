@@ -50,9 +50,17 @@ class Greeting:
     rest: bool = False        # they also wrote something else that still needs a real answer
 
 
+RESPONSE_RE = re.compile(r"\b(va|wa|ва|уа)\s*[’'`]?\s*a?[lл]?\w*[йy]?[кk][уu][мm]\b|^\W*(va|wa|ва)\s+[аa]l\w+|وعليكم", re.I)
+
+
+def is_response(text: str) -> bool:
+    """ "Va alaykum assalom" — they are answering your greeting."""
+    return bool(RESPONSE_RE.search(text))
+
+
 def text_reply(text: str) -> str | None:
     match = SALAM_RE.search(text)
-    if not match:
+    if not match or is_response(text):
         return None
     found = match.group(0)
     script = "arabic" if re.search("[؀-ۿ]", found) else "cyrillic" if re.search("[а-яё]", found, re.I) else "latin"
@@ -145,7 +153,7 @@ async def check(client: TelegramClient, state: State, http: httpx.AsyncClient, h
             if not greeting.sticker and await is_salam_sticker(client, state, http, msg):
                 greeting.sticker = msg
             continue
-        if SALAM_RE.search(text):
+        if SALAM_RE.search(text) and not is_response(text):
             greeting.reply = greeting.reply or text_reply(text)
             text = remainder(text)
         if len(text.split()) >= 2 or "?" in text or (msg.media and not msg.sticker):

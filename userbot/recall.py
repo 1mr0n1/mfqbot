@@ -75,15 +75,21 @@ def index_for(key: tuple, pairs: list[dict]) -> Index:
     return _cache[full]
 
 
+MIN_SCORE = 0.5        # below this the "similar" message is about something else, and its answer misleads
+MIN_QUERY_LETTERS = 9  # "ok", "idk", "ааа": what you answered depended on the moment, not on the words
+
+
 def block(index: Index, incoming: str, k: int) -> tuple[str, list[dict]]:
     """Text for the prompt + the pairs used (so the caller can avoid showing them twice)."""
-    hits = index.search(incoming, k)
+    if k <= 0 or sum(len(t) for t in tokens(incoming)) < MIN_QUERY_LETTERS or len(tokens(incoming)) < 2:
+        return "", []
+    hits = [(s, p) for s, p in index.search(incoming, k) if s >= MIN_SCORE]
     if not hits:
         return "", []
     lines = [f"THEM: {p['them'].replace(chr(10), ' / ')}\nYOU: {p['me'].replace(chr(10), ' / ')}" for _, p in hits]
-    text = ("\nThe closest things people really wrote to you before, and what you actually answered then (most "
-            "similar first). Answer the new message the way you answered these — same length, same tone, same kind of "
-            "answer — unless the situation is clearly different:\n" + "\n".join(lines) + "\n")
+    text = ("\nPeople wrote almost the same thing to you before; this is what you actually answered then (most similar "
+            "first). Take the manner from it — length, tone, the kind of answer. The facts in those answers (names, "
+            "places, times, things) belonged to that moment: do not reuse them now.\n" + "\n".join(lines) + "\n")
     same = [p["me"].replace("\n", " / ") for s, p in hits if s >= 0.8]
     if len(same) >= 2:
         text += ("They have written exactly this to you before; your real answers were: "

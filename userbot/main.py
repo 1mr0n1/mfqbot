@@ -153,7 +153,8 @@ MAX_REPLY_CHARS = 700
 
 
 def looks_safe(reply: str) -> bool:
-    return len(reply) <= MAX_REPLY_CHARS and not LEAK_RE.search(reply) and not re.search(r"@[A-Za-z]\w{3,}", reply)
+    return (len(reply) <= MAX_REPLY_CHARS and not LEAK_RE.search(reply) and not re.search(r"@[A-Za-z]\w{3,}", reply)
+            and not re.search(r"\+?\d[\d\s\-()]{7,}\d", reply))  # no phone / card / code-like numbers, ever
 
 
 # Lines that make it sound like a customer-support bot get dropped.
