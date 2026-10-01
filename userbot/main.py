@@ -425,6 +425,23 @@ async def remember_later(chat_id: int, who: str, their_messages: list[str]):
         log.exception("%s: remembering failed", who)
 
 
+def pacing_on() -> bool:
+    return bool(C.TYPING_LIMITS[1])  # USERBOT_HUMAN_PACING
+
+
+async def type_like_a_person(chat_id: int, text: str) -> float:
+    """Show "typing…" for as long as this text would take — at a speed that varies, sometimes with a pause."""
+    if not pacing_on():
+        return 0
+    plan = rhythm.typing_plan(text)
+    for typing, pause in plan:
+        async with client.action(chat_id, "typing"):
+            await asyncio.sleep(typing)
+        if pause:
+            await asyncio.sleep(pause)  # stopped typing for a moment
+    return sum(a + b for a, b in plan)
+
+
 async def no_text_reply(chat_id: int, who: str, action: str, history):
     """An acknowledgement doesn't need words: leave it, or put a reaction on their message."""
     if action == "skip":
@@ -436,7 +453,7 @@ async def no_text_reply(chat_id: int, who: str, action: str, history):
     target = next((m for m in history if not m.out), None)
     if not target:
         return
-    await asyncio.sleep(rand(C.DRAFT_HOLD))
+    await asyncio.sleep(rhythm.reading_seconds(history) + random.uniform(0.5, 2.5) if pacing_on() else 0)
     try:
         await client(functions.messages.SendReactionRequest(peer=chat_id, msg_id=target.id,
                                                             reaction=[ReactionEmoji(emoticon=emoji)]))
@@ -502,6 +519,7 @@ async def reply_flow(chat_id: int, contact: User):
                                             f"{C.HANDOFF_HOLD // 60} min (or until you write there).")
             return
         await client.send_read_acknowledge(chat_id)
+        opened_at = time.monotonic()  # the moment the chat was opened; reading and thinking count from here
         await asyncio.sleep(rand(C.THINK_DELAY))
 
         hint = ""
@@ -522,7 +540,7 @@ async def reply_flow(chat_id: int, contact: User):
         greeting = await salam.check(client, state, http, history)
         if greeting.sticker:  # a salam sticker is answered with the very same sticker
             trace.emit("decision", who, "They sent an 'Assalomu alaykum' sticker → answering with the same sticker")
-            await asyncio.sleep(rand(C.DRAFT_HOLD))
+            await asyncio.sleep(random.uniform(1.5, 4) if pacing_on() else 0)
             our_texts.setdefault(chat_id, []).append("")
             sent = await client.send_file(chat_id, greeting.sticker.media)
             our_ids.add(sent.id)
@@ -645,7 +663,15 @@ async def reply_flow(chat_id: int, contact: User):
 
         # Show the draft on the dashboard for a moment; Cancel there stops it.
         draft_id = trace.new_draft_id()
-        hold = rand(C.DRAFT_HOLD)
+        if pacing_on():
+            # How long a person would take before starting to type: read what came in, then think —
+            # barely at all for "ок", noticeably for a calculation or a decision.
+            read = rhythm.reading_seconds(history)
+            think = rhythm.thinking_seconds(their_text, "\n".join(parts), chat_id) if from_model else random.uniform(0.5, 2)
+            hold = max(read + think - (time.monotonic() - opened_at), C.MIN_HOLD)
+            trace.emit("decision", who, f"Reading ~{read:.0f}s, thinking ~{think:.0f}s before typing")
+        else:
+            hold = 0
         trace.emit("draft", who, "\n".join(parts), draft_id=draft_id, parts=parts, hold=hold)
         await asyncio.sleep(hold)
 
@@ -679,11 +705,8 @@ async def reply_flow(chat_id: int, contact: User):
                     continue
                 log.info("%s: sent %s %s", who, kind, arg)
             else:
-                seconds = typing_time(part)
-                trace.emit("decision", who, f"Typing for {seconds:.1f}s…", draft_id=draft_id, phase="typing", index=i)
-                if seconds:
-                    async with client.action(chat_id, "typing"):
-                        await asyncio.sleep(seconds)
+                trace.emit("decision", who, "Typing…", draft_id=draft_id, phase="typing", index=i)
+                await type_like_a_person(chat_id, part)
                 slip = quirks.typo(part) if slips else None
                 text = slip[0] if slip else part
                 our_texts.setdefault(chat_id, []).append(text)
@@ -1005,17 +1028,14 @@ async def group_reply_flow(event, sender: User):
             trace.emit("warning", who, f"Draft for the group wasn't good enough — staying quiet: {reply[:120]}")
             return
         draft_id = trace.new_draft_id()
-        hold = rand(C.DRAFT_HOLD)
+        hold = max(rhythm.thinking_seconds(text, reply, chat_id), C.MIN_HOLD) if pacing_on() else 0
         trace.emit("draft", who, reply, draft_id=draft_id, parts=[reply], hold=hold)
         await asyncio.sleep(hold)
         if await trace.draft_cancelled(draft_id):
             trace.emit("cancelled", who, "You cancelled this draft on the dashboard", draft_id=draft_id)
             return
-        seconds = typing_time(reply)
-        trace.emit("decision", who, f"Typing for {seconds:.1f}s…", draft_id=draft_id, phase="typing", index=0)
-        if seconds:
-            async with client.action(chat_id, "typing"):
-                await asyncio.sleep(seconds)
+        trace.emit("decision", who, "Typing…", draft_id=draft_id, phase="typing", index=0)
+        await type_like_a_person(chat_id, reply)
         our_texts.setdefault(chat_id, []).append(reply)
         sent = await client.send_message(chat_id, reply, reply_to=event.id)
         our_ids.add(sent.id)

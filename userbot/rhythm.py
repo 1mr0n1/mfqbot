@@ -6,8 +6,11 @@ Times are this machine's local time. Configure in .env:
   USERBOT_RHYTHM=false               switches all of this off (always answer right away)
 """
 import asyncio
+import itertools
 import logging
+import math
 import random
+import re
 import time
 from datetime import datetime, timedelta
 
@@ -96,3 +99,58 @@ def online_for_a_bit(client: TelegramClient):
     if _offline_task and not _offline_task.done():
         _offline_task.cancel()
     _offline_task = asyncio.create_task(_go_offline(client, random.uniform(*C.ONLINE_LINGER)))
+
+
+# ---------- pacing that depends on the message ----------
+
+HARD_RE = re.compile(r"\d+\s*[%+\-*/x×]\s*\d+|сколько\s+будет|посчитай|реши|почему|зачем|объясни|расскажи|как\s+(сделать|это|работает)|"
+                     r"что\s+(такое|думаешь)|выбрать|лучше|why|explain|how\s+(do|does|to|much|many)|what\s+(is|do\s+you\s+think)|"
+                     r"which|should\s+i|nega|tushuntir|qaysi|qancha\s+bo'ladi", re.I)
+
+
+def _vary(seconds: float, spread: float = 0.35) -> float:
+    """People are never exactly consistent: multiply by a log-normal factor (usually 0.7x–1.4x, sometimes more)."""
+    return seconds * math.exp(random.gauss(0, spread))
+
+
+def reading_seconds(history) -> float:
+    """Time to take in what they sent since your last message: text by length, voice by duration, a look at photos."""
+    total = 0.0
+    for msg in itertools.takewhile(lambda m: not m.out, history):
+        text = msg.raw_text or ""
+        duration = getattr(getattr(msg, "file", None), "duration", None) or 0
+        if (getattr(msg, "voice", None) or getattr(msg, "video_note", None)) and duration:
+            total += min(duration * random.uniform(0.7, 1.0), 45)   # you listen to it
+        elif text:
+            total += 0.4 + len(text) / random.uniform(18, 30)       # reading speed in characters per second
+        if getattr(msg, "photo", None):
+            total += random.uniform(1.5, 4.5)
+        elif getattr(msg, "sticker", None):
+            total += random.uniform(0.3, 1.0)
+    return min(_vary(total, 0.25), 60)
+
+
+def thinking_seconds(their_text: str, reply: str, chat_id: int | None = None) -> float:
+    """How long before you start typing, depending on what was asked and what you're about to say."""
+    words = len(reply.split())
+    if HARD_RE.search(their_text):
+        base = random.uniform(4, 14)        # needs working out
+    elif "?" in their_text and words > 3:
+        base = random.uniform(1.5, 5)       # a normal question
+    elif words <= 2:
+        base = random.uniform(0.3, 1.5)     # "да", "ок", "иду" come out instantly
+    else:
+        base = random.uniform(0.8, 3.5)
+    if chat_id is not None and time.time() - _last_reply_at.get(chat_id, 0) < C.ACTIVE_CHAT_SECONDS:
+        base *= 0.6                         # the conversation is flowing
+    return min(_vary(base), 30)
+
+
+def typing_plan(text: str) -> list[tuple[float, float]]:
+    """-> [(seconds typing, seconds paused after)], so "typing…" can stop and start like a person hesitating."""
+    speed = random.uniform(4.5, 10)         # characters per second; differs from message to message
+    total = min(max(_vary(len(text) / speed, 0.25), 0.7), 25)
+    if len(text) > 25 and random.random() < 0.25:   # stop mid-way, think, continue
+        first = total * random.uniform(0.3, 0.7)
+        return [(first, random.uniform(1, 3.5)), (total - first, 0)]
+    return [(total, 0)]

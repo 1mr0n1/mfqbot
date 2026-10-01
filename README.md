@@ -116,6 +116,10 @@ Name, surname and photo are only changed by you (`.ai …` commands or `python -
   during school hours (`USERBOT_BUSY`, weekdays) replies come 3–20 min late; otherwise ~15% of messages wait a
   few minutes. An ongoing conversation is always answered right away. After acting, the account goes
   "offline" again within a minute.
+- **Pacing that depends on the message** — before typing it "reads" what came in (by length; a voice message by
+  its duration; a few seconds per photo) and "thinks" (almost nothing for "ок", several seconds for a
+  calculation, an explanation or a decision); typing speed differs from message to message and sometimes
+  pauses mid-way. Faster when the conversation is already flowing.
 - **Voice messages** — voice and round-video messages are transcribed locally with Whisper (nothing leaves
   the machine) and answered like text.
 - **Quoting and typos** — it swipe-replies to a specific message when several were sent or the message is old;
