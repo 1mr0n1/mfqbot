@@ -19,9 +19,23 @@ class LLMError(Exception):
 THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.S)
 
 
+def text_only(messages: list[dict]) -> list[dict]:
+    """Replace image parts with a "[photo]" placeholder for models that can't see images."""
+    out = []
+    for msg in messages:
+        content = msg["content"]
+        if isinstance(content, list):
+            text = " ".join(p.get("text", "") for p in content if p.get("type") == "text").strip()
+            content = text if "[photo]" in text else f"[photo] {text}".strip()
+        out.append({**msg, "content": content})
+    return out
+
+
 async def complete(client: httpx.AsyncClient, model: dict, messages: list[dict],
                    max_tokens: int = MAX_TOKENS, reasoning: bool = False) -> str:
     provider = PROVIDERS[model["provider"]]
+    if not model.get("vision"):
+        messages = text_only(messages)
     payload = {"model": model["id"], "messages": messages, "max_tokens": max_tokens}
     if not reasoning:
         payload |= model.get("no_think", {})

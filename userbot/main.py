@@ -5,6 +5,7 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai pause / resume — anywhere: stop/restart all auto-replies
   .ai pause 30m      — pause for a while (m/h/d), then resume automatically
   .ai status         — anywhere: show current state
+  .ai unread         — anywhere: answer unread private messages now (also done at startup)
   .ai save <tag>     — reply to your own voice/round video in Saved Messages to add it to the clip library
   .ai forget <tag>   — remove a clip;  .ai clips — list clips
   (Saved Messages only)
@@ -12,6 +13,7 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai photo          — reply to a photo with this to make it your profile photo
 """
 import asyncio
+import base64
 import json
 import logging
 import random
@@ -209,12 +211,44 @@ def style_block() -> str:
     return block
 
 
+PHOTO_HINT = ("\nThe other person sent you photo(s) — they are attached to their last message and you can see "
+              "them. React to what is actually in the picture (name something specific you see), in your usual "
+              "short style. Never repeat their own words back to them.\n")
+
+
+async def attach_photos(history, messages: list[dict]) -> int:
+    """Give the model the newest photos the other person sent since your last message. Returns how many."""
+    photos = []
+    for msg in history:  # newest first
+        if msg.out:
+            break
+        if msg.photo:
+            photos.append(msg)
+    parts = [{"type": "text", "text": messages[-1]["content"]}]
+    for msg in reversed(photos[:C.MAX_IMAGES]):
+        try:
+            data = await msg.download_media(file=bytes)
+        except Exception:
+            log.exception("Could not download photo")
+            continue
+        if data and len(data) <= 4_000_000:
+            parts.append({"type": "image_url",
+                          "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(data).decode()}})
+    if len(parts) > 1:
+        messages[-1]["content"] = parts
+        log.info("Attached %d photo(s) for the model", len(parts) - 1)
+    return len(parts) - 1
+
+
 async def generate(history, contact: User) -> str | None:
     messages = to_chat_messages(history)
     if not messages or messages[-1]["role"] != "user":
         return ""  # nothing to answer (None means the backend failed)
+    photos = await attach_photos(history, messages) if C.VISION else 0
     system = persona.format(name=full_name(me), contact=full_name(contact), style=style_block(),
                             now=datetime.now().strftime("%A %d %B %Y, %H:%M")) + media.media_block(full_name(me))
+    if photos:
+        system += PHOTO_HINT
     try:
         resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS,
                                                   "max_tokens": 300})
@@ -354,6 +388,9 @@ async def on_command(event):
     elif arg == "resume":
         state.set_paused(False)
         note = "▶️ auto-replies resumed"
+    elif arg == "unread":
+        count = await reply_to_unread()
+        note = f"📬 answering {count} unread chat(s)" if count else "📭 no unread private messages to answer"
     else:
         enabled = ", ".join([await resolve_name(cid) for cid in sorted(state.enabled)]) or "none"
         paused = ("yes" if state.paused else f"until {datetime.fromtimestamp(state.paused_until):%H:%M %d.%m}"
@@ -462,18 +499,28 @@ async def on_incoming(event):
     pending[event.chat_id] = asyncio.create_task(reply_flow(event.chat_id, sender))
 
 
-async def catch_up():
-    """On startup, answer recent unanswered messages in enabled chats (e.g. ones sent during a restart)."""
-    for chat_id in list(state.enabled):
-        if not state.is_active(chat_id, C.REPLY_MODE):
+async def reply_to_unread() -> int:
+    """Answer private chats that are waiting on you: unread DMs (up to UNREAD_MAX_AGE old), plus very
+    recent unanswered ones (e.g. sent during a restart). Groups, channels and bots are never touched."""
+    count = 0
+    async for dialog in client.iter_dialogs(limit=C.UNREAD_SCAN_DIALOGS):
+        contact, last = dialog.entity, dialog.message
+        if not isinstance(contact, User) or contact.bot or contact.is_self or contact.deleted \
+                or contact.id == TELEGRAM_SERVICE_ID:
             continue
-        last = (await client.get_messages(chat_id, limit=1) or [None])[0]
-        if last and not last.out and time.time() - last.date.timestamp() < C.IGNORE_OLDER_THAN:
-            contact = await last.get_sender()
-            if isinstance(contact, User) and not contact.bot:
-                names[chat_id] = full_name(contact)
-                log.info("%s: catching up on unanswered message", label(chat_id))
-                pending[chat_id] = asyncio.create_task(reply_flow(chat_id, contact))
+        if not last or last.out or dialog.id in pending or not state.is_active(dialog.id, C.REPLY_MODE):
+            continue
+        age = time.time() - last.date.timestamp()
+        if not ((dialog.unread_count and age < C.UNREAD_MAX_AGE) or age < C.IGNORE_OLDER_THAN):
+            continue
+        names[dialog.id] = full_name(contact)
+        log.info("%s: answering %s", label(dialog.id),
+                 f"{dialog.unread_count} unread message(s)" if dialog.unread_count else "recent unanswered message")
+        if count:
+            await asyncio.sleep(rand((2, 5)))  # don't fire replies into many chats at the same instant
+        pending[dialog.id] = asyncio.create_task(reply_flow(dialog.id, contact))
+        count += 1
+    return count
 
 
 async def main():
@@ -490,7 +537,7 @@ async def main():
     else:
         enabled = [await resolve_name(cid) for cid in sorted(state.enabled)]
         log.info("Enabled chats: %s", ", ".join(enabled) or "none (type .ai on in a chat)")
-    await catch_up()
+    await reply_to_unread()
     bio_task = asyncio.create_task(bio_loop(client, state))
     try:
         await client.run_until_disconnected()

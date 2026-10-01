@@ -96,8 +96,12 @@ async def complete_stateless(req: CompleteRequest):
         raise HTTPException(400, f"Unknown models: {unknown}. Choose from: {', '.join(MODELS)}")
     messages = ([{"role": "system", "content": req.system}] if req.system else []) + req.messages
 
+    # With images in the request, try models that can actually see them first.
+    has_images = any(isinstance(m.get("content"), list) for m in req.messages)
+    order = sorted(req.models, key=lambda k: not MODELS[k].get("vision")) if has_images else req.models
+
     error = None
-    for key in req.models:
+    for key in order:
         try:
             reply = await complete(app.state.http, MODELS[key], messages, req.max_tokens, req.reasoning)
             return ChatResponse(reply=reply, model=key)

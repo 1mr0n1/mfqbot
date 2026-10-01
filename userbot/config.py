@@ -45,4 +45,8 @@ if os.environ.get("USERBOT_HUMAN_PACING", "true").lower() not in ("1", "true", "
     BETWEEN_MESSAGES = (0.3, 0.6)
 
 OWNER_ACTIVE_WINDOW = 120      # don't auto-reply if you personally wrote in the chat this recently
+VISION = os.environ.get("USERBOT_VISION", "true").lower() in ("1", "true", "yes")
+MAX_IMAGES = 2                 # newest photos from the other person passed to the model per reply
+UNREAD_MAX_AGE = 24 * 3600     # unread DMs older than this are left alone
+UNREAD_SCAN_DIALOGS = 150      # how many recent chats to scan for unread DMs
 IGNORE_OLDER_THAN = 300        # ignore messages older than this (e.g. backlog after restart)

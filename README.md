@@ -56,6 +56,7 @@ Control it by typing these from your account (the command is deleted, confirmati
 | `.ai pause` / `.ai resume` | anywhere | stop / restart all auto-replies |
 | `.ai pause 30m` (m/h/d) | anywhere | pause for a while, then resume automatically |
 | `.ai status` | anywhere | show state |
+| `.ai unread` | anywhere | answer unread private messages now (also done at startup) |
 | `.ai save <tag>` | Saved Messages, as a reply | add your voice / round video message to the clip library |
 | `.ai clips` / `.ai forget <tag>` | anywhere | list / remove clips |
 | `.ai name …` / `.ai surname …` / `.ai bio …` | Saved Messages | change your profile (`-` clears surname/bio) |
@@ -65,6 +66,9 @@ Control it by typing these from your account (the command is deleted, confirmati
 Media: replies can include stickers (your favorites/recents first), GIFs (via @gif) and your own recorded
 voice / round video clips. The model never fakes voice or video — it can only send clips you recorded.
 Profile changes are owner commands only; the AI can't change your profile.
+Vision: photos the other person sends are passed to a model that can see them (`omni`, then `qwen`/`local`);
+text-only models get a `[photo]` placeholder. Unread DMs up to 24h old are answered at startup — private
+chats only, never groups, channels or bots.
 Auto-bio (`USERBOT_AUTO_BIO`): every 6–14h, never at night, the account rewrites its own bio in the learned
 style (no chat content is used, so nothing private leaks); each change is noted in Saved Messages.
 Name, surname and photo are only changed by you (`.ai …` commands or `python -m userbot.profile`).
@@ -74,6 +78,9 @@ enabled with `.ai on`. `USERBOT_HUMAN_PACING=false` replies instantly; `USERBOT_
 Safety behaviour: private chats only (no groups/channels/bots/Telegram service messages), stays quiet
 if you wrote in the chat within the last 2 minutes, cancels its reply if you start replying yourself,
 won't commit you to meetings/money/favors. Style is in `userbot/persona.md`, timing in `userbot/config.py`.
+Vision: photos the other person sends are passed to a model that can see them (`omni`, then `qwen`/`local`);
+text-only models get a `[photo]` placeholder. Unread DMs up to 24h old are answered at startup — private
+chats only, never groups, channels or bots.
 Auto-bio (`USERBOT_AUTO_BIO`): every 6–14h, never at night, the account rewrites its own bio in the learned
 style (no chat content is used, so nothing private leaks); each change is noted in Saved Messages.
 Name, surname and photo are only changed by you (`.ai …` commands or `python -m userbot.profile`).

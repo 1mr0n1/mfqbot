@@ -23,13 +23,17 @@ PROVIDERS = {
 
 # Key = short name the bot/users see; id = provider's model id.
 # no_think = extra payload that switches reasoning off (faster, and no risk of thoughts leaking into replies).
+# vision = accepts image_url content; other models get images replaced by a "[photo]" placeholder.
 MODELS = {
-    "qwen": {"provider": "openrouter", "id": "qwen/qwen3.8-27b:free", "name": "Qwen 3.8 27B",
+    "qwen": {"provider": "openrouter", "id": "qwen/qwen3.8-27b:free", "name": "Qwen 3.8 27B", "vision": True,
              "no_think": {"reasoning": {"enabled": False}}},
     "nemotron": {"provider": "nvidia", "id": "nvidia/nemotron-3-super-120b-a12b", "name": "Nemotron 3 Super 120B",
                  "no_think": {"chat_template_kwargs": {"enable_thinking": False}}},
+    "omni": {"provider": "nvidia", "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+             "name": "Nemotron 3 Nano Omni (sees images)", "vision": True,
+             "no_think": {"chat_template_kwargs": {"enable_thinking": False}}},
     "local": {"provider": "local", "id": os.getenv("LOCAL_MODEL", "gemma-4-e4b-it-mlx"),
-              "name": "Gemma 4 E4B (local)"},
+              "name": "Gemma 4 E4B (local)", "vision": True},
 }
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen")
 
