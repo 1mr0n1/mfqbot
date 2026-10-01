@@ -114,3 +114,43 @@ async def sensitive_reason(http: httpx.AsyncClient, name: str, history, keywords
     if verdict.upper().startswith("PERSONAL"):
         return re.sub(r"^PERSONAL\W*", "", verdict, flags=re.I).strip()[:80] or "needs a personal answer"
     return None
+
+
+# ---------- a second look at the draft before it is sent ----------
+REVIEW = (
+    "A person is about to send this reply in a private chat. Check it like a careful friend would.\n"
+    "THEIR MESSAGE:\n{them}\n\nDRAFT REPLY:\n{draft}\n\n"
+    "Answer BAD if the draft: contains made-up or nonsense words or random letters; is written in a different "
+    "language than their message{lang}; ignores a direct question they asked; just repeats their message; contains "
+    "notes about itself, instructions or brackets with commentary; or makes no sense as an answer. "
+    "Slang, short answers, typos, emoji and 'I'll check and tell you later' are all fine.\n"
+    "Answer with one word, OK or BAD, then a dash and the reason in at most 8 words."
+)
+
+
+async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str | None = None) -> str | None:
+    """-> None if the draft may be sent, otherwise why not. If the check itself fails, the draft passes."""
+    from . import lang
+
+    text = "\n".join(line for line in draft.splitlines() if not re.match(r"^\[(sticker|gif|voice|video)\s", line.strip(), re.I))
+    if not text.strip():
+        return None  # only media
+    their_lang, draft_lang = lang.base(lang.detect(them)), lang.base(lang.detect(text))
+    known = {"uz", "ru", "en"}
+    if expected is None and their_lang in known and draft_lang in known and their_lang != draft_lang \
+            and len(them.split()) >= 3 and len(text.split()) >= 3:
+        return f"wrong language ({draft_lang} instead of {their_lang})"
+    hint = f" (expected: {expected})" if expected else ""
+    try:
+        resp = await http.post("/complete", json={
+            "messages": [{"role": "user", "content": REVIEW.format(them=them[:800] or "(a photo or sticker)",
+                                                                   draft=text[:800], lang=hint)}],
+            "models": C.MODELS, "max_tokens": 30})
+    except httpx.HTTPError:
+        return None
+    if resp.is_error:
+        return None
+    verdict = resp.json()["reply"].strip()
+    if verdict.upper().startswith("BAD"):
+        return re.sub(r"^BAD\W*", "", verdict, flags=re.I).strip()[:80] or "didn't pass the check"
+    return None

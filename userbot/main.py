@@ -14,6 +14,8 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai name <first name> / .ai surname <last name or -> / .ai bio <text or -> / .ai profile
   .ai photo          — reply to a photo with this to make it your profile photo
   .ai pfp undo       — anywhere: remove the newest profile photo (e.g. one someone asked the bot to set)
+  .ai summary        — anywhere: today's digest now (it also arrives every evening)
+  .ai fwd <@username or name> — reply to any message with this: forward it to that person or group
   .ai note <text>    — in a private chat: remember something about that person
   .ai notes / .ai forgetnotes — in a private chat: show / erase what is remembered about that person
 """
@@ -26,14 +28,14 @@ import logging
 import random
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 from telethon import TelegramClient, errors, events, functions
 from telethon.tl.types import ReactionEmoji, User
 
 from . import config as C
-from . import judge, lang, media, memory, pfp, salam
+from . import daylog, judge, lang, media, memory, pfp, quirks, rhythm, salam, voice
 from . import trace
 from .autoprofile import bio_loop
 from .state import State
@@ -388,6 +390,7 @@ async def remember_later(chat_id: int, who: str, their_messages: list[str]):
     try:
         for note in await memory.remember(http, chat_id, who, their_messages):
             log.info("%s: remembered %r", who, note)
+            daylog.record("note", who, note)
             trace.emit("decision", who, f"Noted for later: {note}")
     except Exception:
         log.exception("%s: remembering failed", who)
@@ -397,6 +400,7 @@ async def no_text_reply(chat_id: int, who: str, action: str, history):
     """An acknowledgement doesn't need words: leave it, or put a reaction on their message."""
     if action == "skip":
         log.info("%s: no reply needed", who)
+        daylog.record("skipped", who)
         trace.emit("decision", who, "Their message doesn't need a reply — leaving it")
         return
     emoji = action.split(":", 1)[1]
@@ -412,6 +416,8 @@ async def no_text_reply(chat_id: int, who: str, action: str, history):
         trace.emit("decision", who, "No reply needed (a reaction wasn't possible here) — leaving it")
         return
     log.info("%s: reacted %s", who, emoji)
+    daylog.record("reacted", who, emoji)
+    rhythm.online_for_a_bit(client)
     trace.emit("sent", who, f"[reaction {emoji}] instead of a text reply")
 
 
@@ -421,7 +427,11 @@ async def reply_flow(chat_id: int, contact: User):
     draft_id, history, failed = None, None, False
     try:
         me = await client.get_me()  # profile may have been changed from outside (userbot.profile)
-        await asyncio.sleep(rand(C.DEBOUNCE) + rand(C.READ_DELAY))
+        wait = rhythm.wait_seconds(chat_id)
+        if wait > 30:
+            trace.emit("decision", who, ("At school — " if rhythm.busy() else "Not on the phone right now — ")
+                       + f"will look at this in about {wait / 60:.0f} min")
+        await asyncio.sleep(wait + rand(C.DEBOUNCE) + rand(C.READ_DELAY))
 
         # If you've been chatting here yourself, hold off until you've gone quiet, then re-check.
         # (Your own new message in the chat cancels this task entirely.)
@@ -433,6 +443,19 @@ async def reply_flow(chat_id: int, contact: User):
             log.info("%s: you're active here, holding off %.0fs", who, wait)
             trace.emit("decision", who, f"You wrote in this chat recently — holding off {wait:.0f}s so I don't interrupt")
             await asyncio.sleep(wait + rand(C.READ_DELAY))
+        # Listen to voice / round-video messages: from here on their transcript counts as the message text.
+        heard = 0
+        for msg in itertools.takewhile(lambda m: not m.out, history):
+            if (msg.voice or msg.video_note) and not msg.raw_text:
+                spoken = await voice.transcript(msg)
+                if spoken:
+                    msg.message = spoken
+                    heard += 1
+        if heard:
+            trace.emit("decision", who, f"Listened to {heard} voice message(s)")
+        their_text = "\n".join(m.raw_text for m in reversed(list(itertools.takewhile(lambda m: not m.out, history)))
+                               if m.raw_text)
+
         # Questions about who/what is answering are simply ignored — they are not a reason to hand the chat over.
         identity = identity_question(history)
         reason = (await judge.sensitive_reason(http, full_name(me), history, keywords_only=identity is not None)
@@ -442,6 +465,7 @@ async def reply_flow(chat_id: int, contact: User):
             snippet = " / ".join(m.raw_text for m in reversed(list(itertools.takewhile(lambda m: not m.out, history)))
                                  if m.raw_text)[:300]
             log.info("%s: handed to owner (%s)", who, reason)
+            daylog.record("handoff", who, f"{reason}: {snippet}")
             trace.emit("warning", who, f"Leaving this one to you ({reason}) — not replying, staying out for "
                                        f"{C.HANDOFF_HOLD // 60} min or until you answer")
             await client.send_message("me", f"🚨 {who} needs YOU — {reason}.\n“{snippet}”\n"
@@ -462,6 +486,8 @@ async def reply_flow(chat_id: int, contact: User):
                 "unsafe": "Not using that photo — the safety look didn't clear it",
                 "error": "Couldn't change the profile photo (download/upload failed)"}[outcome])
             log.info("%s: profile photo request -> %s", who, outcome)
+            if outcome == "changed":
+                daylog.record("profile", who, f"photo changed on {who}'s request")
             hint = pfp.HINTS[outcome]
 
         greeting = await salam.check(client, state, http, history)
@@ -489,11 +515,13 @@ async def reply_flow(chat_id: int, contact: User):
             await no_text_reply(chat_id, who, action, history)
             return
 
+        from_model = False
         if greeting.reply and not greeting.rest:
             reply = greeting.reply  # fixed text, never written by the model
             trace.emit("decision", who, "They wrote the salam greeting → sending the fixed proper answer (model not used)")
         elif identity == "only":
             log.info("%s: identity question ignored", who)
+            daylog.record("ignored", who, their_text)
             trace.emit("decision", who, "They asked who/what is answering — ignoring it, no reply")
             return
         else:
@@ -501,6 +529,7 @@ async def reply_flow(chat_id: int, contact: User):
                 trace.emit("decision", who, "Their message also asks who/what is answering — ignoring that part")
                 hint += IDENTITY_HINT
             trace.emit("decision", who, "Read the chat — writing a reply")
+            from_model = True
             for attempt in range(C.GENERATE_RETRIES + 1):
                 if attempt:  # every model failed — come back later, like a busy person would
                     delay = rand(C.RETRY_DELAY)
@@ -539,12 +568,34 @@ async def reply_flow(chat_id: int, contact: User):
         if not parts:
             return
 
+        # A second look before anything is sent: wrong language, nonsense words, a missed question…
+        if C.REVIEW and from_model:
+            expected = "the language these two normally use with each other" if contact_style_path(contact) else None
+            problem = await judge.review(http, their_text, "\n".join(parts), expected)
+            if problem:
+                log.info("%s: draft rejected (%s): %r", who, problem, reply[:120])
+                trace.emit("warning", who, f"Second look rejected the draft ({problem}) — rewriting: {reply[:140]}")
+                retry_hint = hint + f"\nYour previous draft was rejected: {problem}. Write a better, simpler reply.\n"
+                reply = clean_reply(await generate(history, contact, retry_hint) or "")
+                parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+                problem = (await judge.review(http, their_text, "\n".join(parts), expected)
+                           if parts and looks_safe(reply) else "no usable second draft")
+                if problem:
+                    log.warning("%s: second draft rejected too (%s) — leaving it to the owner", who, problem)
+                    trace.emit("warning", who, f"Couldn't write a good reply ({problem}) — leaving this one to you")
+                    daylog.record("failed", who, their_text)
+                    await client.send_message("me", f"🤷 I couldn't write a good reply to {who} ({problem}).\n"
+                                                    f"“{their_text[:300]}”\nThat one is yours.")
+                    return
+
         # Show the draft on the dashboard for a moment; Cancel there stops it.
         draft_id = trace.new_draft_id()
         hold = rand(C.DRAFT_HOLD)
         trace.emit("draft", who, "\n".join(parts), draft_id=draft_id, parts=parts, hold=hold)
         await asyncio.sleep(hold)
 
+        quote = quirks.reply_target(history)          # swipe-reply to a specific message when that's natural
+        slips = from_model and not quirks.is_formal(history)  # typos only in casual chats, never in fixed replies
         sent_count = 0
         for i, part in enumerate(parts):
             if await trace.draft_cancelled(draft_id):
@@ -578,13 +629,32 @@ async def reply_flow(chat_id: int, contact: User):
                 if seconds:
                     async with client.action(chat_id, "typing"):
                         await asyncio.sleep(seconds)
-                our_texts.setdefault(chat_id, []).append(part)
-                sent = await client.send_message(chat_id, part)
+                slip = quirks.typo(part) if slips else None
+                text = slip[0] if slip else part
+                our_texts.setdefault(chat_id, []).append(text)
+                sent = await client.send_message(chat_id, text, reply_to=quote.id if quote else None)
+                quote = None  # only the first message quotes
+                if slip:  # notice the typo a moment later and fix it, by editing or with a "*word"
+                    await asyncio.sleep(rand((1.5, 4)))
+                    if random.random() < 0.5:
+                        await client.edit_message(chat_id, sent.id, part)
+                        trace.emit("decision", who, f"Sent it with a typo ('{slip[1]}'), then edited the message")
+                    else:
+                        fix = "*" + slip[1]
+                        our_texts[chat_id].append(fix)
+                        fixed = await client.send_message(chat_id, fix)
+                        our_ids.add(fixed.id)
+                        state.record_sent(chat_id, fixed.id)
+                        trace.emit("sent", who, fix)
             our_ids.add(sent.id)
             state.record_sent(chat_id, sent.id)
             sent_count += 1
             trace.emit("sent", who, part, draft_id=draft_id, index=i)
         trace.emit("decision", who, f"Done — {sent_count} message(s) sent", draft_id=draft_id, final=True)
+        rhythm.replied(chat_id)
+        rhythm.online_for_a_bit(client)
+        if sent_count:
+            daylog.record("replied", who, " / ".join(parts), them=their_text[:200])
         if C.REMEMBER:
             theirs = [m.raw_text for m in itertools.takewhile(lambda m: not m.out, history) if m.raw_text]
             spawn(remember_later(chat_id, who, theirs[::-1]))
@@ -606,7 +676,7 @@ async def reply_flow(chat_id: int, contact: User):
             pending.pop(chat_id)
 
 
-@client.on(events.NewMessage(outgoing=True, pattern=r"^\.ai(?:\s+(\w+))?(?:\s+([\w-]+))?\s*$"))
+@client.on(events.NewMessage(outgoing=True, pattern=r"^\.ai(?:\s+(\w+))?(?:\s+(@?[\w.-]+))?\s*$"))
 async def on_command(event):
     arg = (event.pattern_match.group(1) or "status").lower()
     if arg in PROFILE_COMMANDS or arg == "note":
@@ -617,6 +687,12 @@ async def on_command(event):
     replied = await event.get_reply_message() if event.is_reply else None
     await event.delete()
 
+    if arg == "summary":
+        await client.send_message("me", daylog.summary())
+        return
+    if arg == "fwd":
+        await client.send_message("me", await forward_command(tag, replied))
+        return
     if arg in ("save", "forget", "clips"):
         await client.send_message("me", clip_command(arg, tag, replied, in_saved))
         return
@@ -651,8 +727,8 @@ async def on_command(event):
         await client.send_message("me", note)
         return
 
-    if arg in ("on", "off") and (in_saved or not event.is_private):
-        note = "⚠️ .ai on/off only works inside a private chat"
+    if arg in ("on", "off") and in_saved:
+        note = "⚠️ use .ai on/off inside the chat or group you mean"
     elif arg == "on":
         state.enable(chat_id)
         note = "✅ auto-replies ON for {chat}"
@@ -752,6 +828,28 @@ async def profile_command(cmd: str, value: str, replied) -> str:
     return "✅ bio cleared" if clear else f"✅ bio → {value}"
 
 
+async def forward_command(target: str, replied) -> str:
+    """`.ai fwd <who>` as a reply to a message: forward that message. Only you can trigger a forward."""
+    if not replied or not target:
+        return "⚠️ reply to a message with .ai fwd <@username or name>"
+    entity = None
+    if target.startswith("@"):
+        try:
+            entity = await client.get_entity(target)
+        except Exception:
+            return f"⚠️ couldn't find {target}"
+    else:
+        matches = [d for d in await client.get_dialogs(limit=300) if target in (d.name or "").lower()]
+        if len(matches) != 1:
+            names_found = ", ".join(d.name for d in matches[:6]) or "nobody"
+            return f"⚠️ '{target}' matches {len(matches)} chats ({names_found}) — be more specific or use @username"
+        entity = matches[0].entity
+    await client.forward_messages(entity, replied)
+    name = getattr(entity, "title", None) or full_name(entity)
+    daylog.record("replied", name, "[forwarded a message — your command]")
+    return f"↪️ forwarded to {name}"
+
+
 def clip_command(arg: str, tag: str, replied, in_saved: bool) -> str:
     if arg == "clips":
         clips = media.load_clips()
@@ -795,11 +893,122 @@ async def on_incoming(event):
         trace.emit("decision", who, "Not replying — auto-replies are paused" if state.is_paused()
                    else "Not replying — auto-replies are off for this chat")
         return
+    if rhythm.asleep():
+        trace.emit("decision", who, "Asleep — this stays unread until the morning")
+        return
     if state.handed_off(event.chat_id):
         trace.emit("decision", who, "Still leaving this chat to you (handed off earlier)")
         return
     cancel(event.chat_id)  # a new message restarts the wait, so bursts get one reply
     pending[event.chat_id] = asyncio.create_task(reply_flow(event.chat_id, sender))
+
+
+GROUP_HINT = ("\nThis is a GROUP chat. Below is the recent conversation; lines start with who wrote them ('You' is "
+              "you). {sender} just mentioned you or replied to you — answer that message only, briefly, the way you "
+              "would in a group. Don't greet everyone, don't address other people, no stickers or GIFs.\n")
+
+
+async def group_reply_flow(event, sender: User):
+    """Someone mentioned you or replied to you in a group: answer that message, quoting it."""
+    chat_id = event.chat_id
+    chat = await event.get_chat()
+    who = f"{full_name(sender)} @ {getattr(chat, 'title', 'group')}"
+    try:
+        await asyncio.sleep(rhythm.wait_seconds(chat_id) + rand(C.DEBOUNCE))
+        text = event.raw_text or ""
+        if identity_question([event.message]) == "only":
+            trace.emit("decision", who, "They asked who/what is answering — ignoring it, no reply")
+            daylog.record("ignored", who, text)
+            return
+        if C.HANDOFF and await judge.sensitive_reason(http, full_name(me), [event.message], keywords_only=True):
+            trace.emit("warning", who, "Sensitive topic in a group — not replying")
+            return
+        history = await client.get_messages(chat_id, limit=C.GROUP_CONTEXT)
+        lines = []
+        for msg in reversed(history):
+            content = describe(msg)
+            if content:
+                author = "You" if msg.out else (full_name(msg.sender) if isinstance(msg.sender, User) else "Someone")
+                lines.append(f"{author}: {content}")
+        system = persona.format(name=full_name(me), contact=f"{full_name(sender)} (in the group “{getattr(chat, 'title', '')}”)",
+                                style=style_block(full_name(sender), text),
+                                now=datetime.now().strftime("%A %d %B %Y, %H:%M"))
+        system += memory.facts_block(full_name(me)) + GROUP_HINT.format(sender=full_name(sender))
+        if identity_question([event.message]) == "mixed":
+            system += IDENTITY_HINT
+        trace.emit("incoming", who, text[:300])
+        trace.emit("decision", who, "Mentioned in a group — writing a reply")
+        resp = await http.post("/complete", json={"messages": [{"role": "user", "content": "\n".join(lines)}],
+                                                  "system": system, "models": C.MODELS, "max_tokens": 300})
+        if resp.is_error:
+            trace.emit("warning", who, "No model answered — staying quiet in the group")
+            return
+        reply = clean_reply(resp.json()["reply"])
+        parts = [p for p in split_reply(reply) if not media.MEDIA_LINE_RE.match(p)]
+        reply = "\n".join(parts[:2])
+        if not reply or not looks_safe(reply) or (C.REVIEW and await judge.review(http, text, reply)):
+            trace.emit("warning", who, f"Draft for the group wasn't good enough — staying quiet: {reply[:120]}")
+            return
+        draft_id = trace.new_draft_id()
+        hold = rand(C.DRAFT_HOLD)
+        trace.emit("draft", who, reply, draft_id=draft_id, parts=[reply], hold=hold)
+        await asyncio.sleep(hold)
+        if await trace.draft_cancelled(draft_id):
+            trace.emit("cancelled", who, "You cancelled this draft on the dashboard", draft_id=draft_id)
+            return
+        seconds = typing_time(reply)
+        trace.emit("decision", who, f"Typing for {seconds:.1f}s…", draft_id=draft_id, phase="typing", index=0)
+        if seconds:
+            async with client.action(chat_id, "typing"):
+                await asyncio.sleep(seconds)
+        our_texts.setdefault(chat_id, []).append(reply)
+        sent = await client.send_message(chat_id, reply, reply_to=event.id)
+        our_ids.add(sent.id)
+        trace.emit("sent", who, reply, draft_id=draft_id, index=0, final=True)
+        log.info("%s: replied in group (%d chars)", who, len(reply))
+        daylog.record("replied", who, reply, them=text[:200])
+        rhythm.replied(chat_id)
+        rhythm.online_for_a_bit(client)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("%s: group reply failed", who)
+    finally:
+        if pending.get(chat_id) is asyncio.current_task():
+            pending.pop(chat_id)
+
+
+@client.on(events.NewMessage(incoming=True))
+async def on_group_mention(event):
+    """Groups: only when someone @mentions you or replies to one of your messages."""
+    if not C.GROUPS or not event.is_group or not event.mentioned:
+        return
+    if time.time() - event.date.timestamp() > C.IGNORE_OLDER_THAN or rhythm.asleep():
+        return
+    if state.is_paused() or event.chat_id in state.disabled:
+        return
+    sender = await event.get_sender()
+    if not isinstance(sender, User) or sender.bot:
+        return
+    cancel(event.chat_id)
+    pending[event.chat_id] = asyncio.create_task(group_reply_flow(event, sender))
+
+
+async def summary_loop():
+    """Every evening: a digest of the day in Saved Messages."""
+    if not C.SUMMARY_TIME:
+        return
+    hour, minute = (int(x) for x in C.SUMMARY_TIME.split(":"))
+    while True:
+        now = datetime.now()
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        await asyncio.sleep((target - now).total_seconds())
+        try:
+            await client.send_message("me", daylog.summary())
+        except Exception:
+            log.exception("Evening summary failed")
 
 
 async def unread_loop():
@@ -817,6 +1026,8 @@ async def reply_to_unread(limit: int = 0) -> int:
     """Answer private chats that are waiting on you: unread DMs (up to UNREAD_MAX_AGE old), plus very
     recent unanswered ones (e.g. sent during a restart). Groups, channels and bots are never touched."""
     count = 0
+    if rhythm.asleep():
+        return count  # nobody answers at night; these get picked up after waking
     async for dialog in client.iter_dialogs(limit=limit or C.UNREAD_SCAN_DIALOGS):
         contact, last = dialog.entity, dialog.message
         if not isinstance(contact, User) or contact.bot or contact.is_self or contact.deleted \
@@ -856,7 +1067,8 @@ async def main():
         log.info("Enabled chats: %s", ", ".join(enabled) or "none (type .ai on in a chat)")
     trace.emit("system", "", f"Userbot started as {full_name(me)} — mode: {C.REPLY_MODE}, models: {', '.join(C.MODELS)}")
     await reply_to_unread()
-    background = [asyncio.create_task(bio_loop(client, state)), asyncio.create_task(unread_loop())]
+    background = [asyncio.create_task(bio_loop(client, state)), asyncio.create_task(unread_loop()),
+                  asyncio.create_task(summary_loop())]
     try:
         await client.run_until_disconnected()
     finally:

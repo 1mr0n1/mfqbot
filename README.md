@@ -108,6 +108,24 @@ Name, surname and photo are only changed by you (`.ai …` commands or `python -
   not answered: the message stays unread, you get a 🚨 note in Saved Messages, and the account stays out of
   that chat for 30 minutes or until you write there (`USERBOT_HANDOFF`).
 
+### More human touches
+
+- **Second look** — every model-written draft is checked (right language, no nonsense words, answers the
+  question). A rejected draft is rewritten once; if that fails too, nothing is sent and you get a 🤷 note.
+- **Daily rhythm** — asleep (`USERBOT_SLEEP`) nothing is read or answered and it catches up after waking;
+  during school hours (`USERBOT_BUSY`, weekdays) replies come 3–20 min late; otherwise ~15% of messages wait a
+  few minutes. An ongoing conversation is always answered right away. After acting, the account goes
+  "offline" again within a minute.
+- **Voice messages** — voice and round-video messages are transcribed locally with Whisper (nothing leaves
+  the machine) and answered like text.
+- **Quoting and typos** — it swipe-replies to a specific message when several were sent or the message is old;
+  ~6% of casual messages go out with a typo that is then edited or fixed with a `*word`.
+- **Evening summary** — a digest in Saved Messages at `USERBOT_SUMMARY_TIME` (`.ai summary` for one now).
+- **Groups** — replies only when someone @mentions you or replies to your message, quoting it; `.ai off` in a
+  group switches that group off.
+- **Forwarding** — reply to any message with `.ai fwd <@username or name>` to forward it. Only you can trigger
+  a forward; the account never forwards other chats' messages on someone's request.
+
 ### Admin dashboard
 
 Open http://127.0.0.1:8000/admin while the backend and userbot run. It shows a live **decision log**

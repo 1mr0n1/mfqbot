@@ -19,6 +19,37 @@ CONTACT_PAIRS = 14          # same, for a person with their own style file (styl
 CLIPS_PATH = HERE / "clips.json"  # tag -> your voice/round-video clip in Saved Messages
 MEDIA_ENABLED = os.environ.get("USERBOT_MEDIA", "true").lower() in ("1", "true", "yes")
 
+# A second look at every draft before sending (see judge.review)
+REVIEW = os.environ.get("USERBOT_REVIEW", "true").lower() in ("1", "true", "yes")
+
+# Daily rhythm and presence (see rhythm.py) — local time of this machine
+RHYTHM = os.environ.get("USERBOT_RHYTHM", "true").lower() in ("1", "true", "yes")
+SLEEP_WINDOW = os.environ.get("USERBOT_SLEEP", "00:00-07:00")   # asleep: nothing is read or answered
+BUSY_WINDOW = os.environ.get("USERBOT_BUSY", "08:30-15:30")     # weekdays (school): answers come late
+WAKE_JITTER_MIN = (5, 30)        # minutes after waking before the phone is picked up
+BUSY_DELAY = (180, 1200)         # seconds until a message is looked at while busy
+SLOW_CHANCE = 0.15               # otherwise: chance that a message waits a while anyway
+SLOW_DELAY = (120, 600)
+ACTIVE_CHAT_SECONDS = 240        # after a reply the chat counts as an ongoing conversation: no delays
+ONLINE_LINGER = (15, 60)         # seconds to stay "online" after doing something
+
+# Small human touches (see quirks.py)
+TYPO_CHANCE = float(os.environ.get("USERBOT_TYPO_CHANCE", "0.06"))  # share of messages sent with a typo, then fixed
+QUOTE_IF_OLDER_THAN = 3600       # answering something this old (seconds): quote it
+
+# Evening summary in Saved Messages (see daylog.py)
+DAYLOG_PATH = HERE / "daylog.json"
+SUMMARY_TIME = os.environ.get("USERBOT_SUMMARY_TIME", "21:30")  # empty = no automatic summary
+
+# Group chats: answer only when mentioned or replied to
+GROUPS = os.environ.get("USERBOT_GROUPS", "true").lower() in ("1", "true", "yes")
+GROUP_CONTEXT = 15               # how many recent group messages the model sees
+
+# Voice messages are transcribed locally with Whisper (see voice.py)
+VOICE_TRANSCRIBE = os.environ.get("USERBOT_VOICE", "true").lower() in ("1", "true", "yes")
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")
+VOICE_MAX_SECONDS = 180
+
 # What the account knows (see memory.py) and when it stays out (see judge.py)
 FACTS_PATH = HERE / "facts.md"   # you write this; git-ignored
 MEMORY_DIR = HERE / "memory"     # automatic notes per person; git-ignored

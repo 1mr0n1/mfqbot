@@ -17,7 +17,7 @@ from telethon import TelegramClient, errors, functions
 from telethon.tl.types import User
 
 from . import config as C
-from . import trace
+from . import daylog, trace
 
 GREETING_RE = re.compile(r"^(yo|hi|hey|hello|privet|привет|салам|salom)\b", re.I)
 from .learn_style import SLUR_RE
@@ -118,6 +118,7 @@ async def bio_loop(client: TelegramClient, state: State):
                 state.record_bio(bio)
                 log.info("Bio changed to %r", bio)
                 trace.emit("system", "", f"Changed my bio to: {bio}")
+                daylog.record("profile", "", f"bio → {bio}")
                 await client.send_message("me", f"✏️ bio updated: {bio}")
         except errors.RPCError as e:
             log.warning("Bio update refused: %s", e.__class__.__name__)
