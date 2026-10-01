@@ -86,6 +86,14 @@ style (no chat content is used, so nothing private leaks); each change is noted 
 Name, surname and photo are only changed by you (`.ai …` commands or `python -m userbot.profile`).
 `USERBOT_REPLY_MODE=all` replies in every private chat instead of only enabled ones.
 
+### Admin dashboard
+
+Open http://127.0.0.1:8000/admin while the backend and userbot run. It shows a live **decision log**
+(who wrote, why the bot waits or stays quiet, which model answered, what was blocked) and an
+**About to send** panel: every draft is held for 2–3 s (`DRAFT_HOLD`) with a Cancel button, then typed
+out with a human-length "typing…" indicator. Events live in memory only and the page is reachable
+only from this machine.
+
 ### Teaching it your texting style
 
 Either from a Telegram Desktop export (Chat → ⋮ → Export chat history → HTML) or from a live account:

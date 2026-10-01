@@ -5,7 +5,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import storage
+from . import admin, storage
 from .config import MAX_TOKENS, MODELS, SYSTEM_PROMPT
 from .llm import LLMError, complete
 
@@ -20,6 +20,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Chatbot backend", lifespan=lifespan)
+app.include_router(admin.router)
 
 
 class ChatRequest(BaseModel):

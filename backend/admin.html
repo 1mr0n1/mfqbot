@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Userbot admin</title>
+<style>
+  :root { --bg:#0f1115; --panel:#181b22; --line:#262a33; --text:#e6e8ec; --dim:#8b92a0;
+          --blue:#5aa2ff; --green:#4cc38a; --amber:#f0b44c; --red:#f2616d; --violet:#a78bfa; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:2; }
+  h1 { font-size:16px; margin:0; font-weight:600; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--red); }
+  .dot.on { background:var(--green); }
+  #status { color:var(--dim); font-size:12px; }
+  .spacer { flex:1; }
+  select, button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:7px; padding:6px 10px; font:inherit; cursor:pointer; }
+  main { max-width:980px; margin:0 auto; padding:18px 20px 60px; }
+  h2 { font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); margin:22px 0 10px; font-weight:600; }
+  .empty { color:var(--dim); padding:14px; border:1px dashed var(--line); border-radius:10px; }
+  .draft { background:var(--panel); border:1px solid var(--amber); border-radius:12px; padding:14px; margin-bottom:10px; }
+  .draft .top { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .draft .who { font-weight:600; }
+  .draft .phase { color:var(--amber); font-size:12px; }
+  .bubble { background:#22303f; border-radius:12px 12px 12px 3px; padding:7px 11px; margin:5px 0; display:inline-block; max-width:100%; white-space:pre-wrap; word-break:break-word; }
+  .bubble.media { background:#2c2640; color:var(--violet); }
+  .bubble.done { opacity:.45; }
+  .bar { height:4px; background:var(--line); border-radius:2px; overflow:hidden; margin-top:10px; }
+  .bar i { display:block; height:100%; background:var(--amber); width:100%; }
+  .cancel { border-color:var(--red); color:var(--red); }
+  .cancel:hover { background:var(--red); color:#fff; }
+  .row { display:grid; grid-template-columns:64px 92px 150px 1fr; gap:10px; padding:8px 10px; border-bottom:1px solid var(--line); align-items:start; }
+  .row:hover { background:var(--panel); }
+  .time { color:var(--dim); font-variant-numeric:tabular-nums; }
+  .badge { font-size:11px; padding:2px 7px; border-radius:20px; border:1px solid; justify-self:start; white-space:nowrap; }
+  .incoming { color:var(--blue); } .decision { color:var(--dim); } .draft-b { color:var(--amber); }
+  .sent { color:var(--green); } .cancelled, .warning { color:var(--red); } .system { color:var(--violet); }
+  .chat { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .msg { white-space:pre-wrap; word-break:break-word; }
+  @media (max-width:700px) { .row { grid-template-columns:54px 1fr; } .row .chat, .row .msg { grid-column:1 / -1; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span><h1>Userbot admin</h1><span id="status">connecting…</span>
+  <span class="spacer"></span>
+  <select id="filter"><option value="">All chats</option></select>
+  <button id="clear">Clear view</button>
+</header>
+<main>
+  <h2>About to send</h2>
+  <div id="drafts"><div class="empty">Nothing queued. Drafts appear here for a moment before they're sent.</div></div>
+  <h2>Decision log</h2>
+  <div id="log"><div class="empty">Waiting for activity…</div></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let lastId = 0, offset = 0, events = [], hiddenBefore = 0;
+const drafts = new Map();   // draft_id -> {chat, parts, holdUntil, hold, phase, done:Set}
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
+function hhmmss(ts) { return new Date(ts * 1000).toLocaleTimeString([], {hour12:false}); }
+
+function applyEvent(e) {
+  const id = e.data && e.data.draft_id;
+  if (e.kind === "draft" && id) {
+    drafts.set(id, {chat:e.chat, parts:e.data.parts || [], holdUntil:e.ts + (e.data.hold || 0), hold:e.data.hold || 0, phase:"hold", done:new Set()});
+  } else if (id && drafts.has(id)) {
+    const d = drafts.get(id);
+    if (e.data.phase === "typing") { d.phase = "typing"; d.current = e.data.index; }
+    if (e.kind === "sent" && e.data.index !== undefined) d.done.add(e.data.index);
+    if (e.data.final || e.kind === "cancelled") drafts.delete(id);
+  }
+  const f = $("filter");
+  if (e.chat && ![...f.options].some(o => o.value === e.chat)) f.add(new Option(e.chat, e.chat));
+}
+
+function renderDrafts() {
+  const now = Date.now() / 1000 + offset, box = $("drafts");
+  if (!drafts.size) { box.innerHTML = '<div class="empty">Nothing queued. Drafts appear here for a moment before they\'re sent.</div>'; return; }
+  box.innerHTML = [...drafts.entries()].map(([id, d]) => {
+    const left = Math.max(d.holdUntil - now, 0);
+    const phase = d.phase === "hold" ? `sending in ${left.toFixed(1)}s` : "typing…";
+    const bubbles = d.parts.map((p, i) => `<div><span class="bubble ${/^\[(sticker|gif|voice|video)\s/i.test(p) ? "media" : ""} ${d.done.has(i) ? "done" : ""}">${esc(p)}</span></div>`).join("");
+    const bar = d.phase === "hold" && d.hold ? `<div class="bar"><i style="width:${(left / d.hold * 100).toFixed(0)}%"></i></div>` : "";
+    return `<div class="draft"><div class="top"><span class="who">→ ${esc(d.chat)}</span><span class="phase">${phase}</span><span class="spacer" style="flex:1"></span><button class="cancel" data-id="${esc(id)}">Cancel</button></div>${bubbles}${bar}</div>`;
+  }).join("");
+}
+
+function renderLog() {
+  const chat = $("filter").value;
+  const rows = events.filter(e => e.id > hiddenBefore && (!chat || e.chat === chat)).slice(-300).reverse();
+  $("log").innerHTML = rows.length ? rows.map(e => {
+    const cls = e.kind === "draft" ? "draft-b" : e.kind;
+    return `<div class="row"><span class="time">${hhmmss(e.ts)}</span><span class="badge ${cls}">${esc(e.kind)}</span><span class="chat">${esc(e.chat)}</span><span class="msg">${esc(e.text)}</span></div>`;
+  }).join("") : '<div class="empty">Waiting for activity…</div>';
+}
+
+async function poll() {
+  try {
+    const r = await fetch(`/admin/events?after=${lastId}`);
+    const data = await r.json();
+    offset = data.now - Date.now() / 1000;
+    if (data.events.length) {
+      for (const e of data.events) { events.push(e); applyEvent(e); lastId = e.id; }
+      events = events.slice(-500);
+      renderLog();
+    }
+    $("dot").classList.add("on"); $("status").textContent = "live · this page is only reachable from this Mac";
+  } catch { $("dot").classList.remove("on"); $("status").textContent = "backend not reachable"; }
+}
+
+$("drafts").addEventListener("click", async ev => {
+  const id = ev.target.dataset && ev.target.dataset.id;
+  if (!id) return;
+  ev.target.disabled = true; ev.target.textContent = "Cancelling…";
+  await fetch(`/admin/drafts/${encodeURIComponent(id)}/cancel`, {method:"POST"});
+});
+$("filter").addEventListener("change", renderLog);
+$("clear").addEventListener("click", () => { hiddenBefore = lastId; renderLog(); });
+
+setInterval(poll, 700); setInterval(renderDrafts, 100); poll();
+</script>
+</body>
+</html>

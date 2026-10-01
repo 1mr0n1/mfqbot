@@ -27,11 +27,12 @@ BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 MODELS = [m.strip() for m in os.environ.get("USERBOT_MODELS", "nemotron,qwen").split(",") if m.strip()]
 REPLY_MODE = os.environ.get("USERBOT_REPLY_MODE", "allowlist")  # "allowlist" or "all"
 
-# --- Human-like timing (seconds) ---
-DEBOUNCE = (6, 12)             # wait for the other person to finish a burst of messages
-READ_DELAY = (3, 25)           # "picking up the phone" before the chat is marked read
-THINK_DELAY = (1, 4)           # pause between reading and starting to type
-TYPING_CHARS_PER_SEC = (5, 9)  # typing speed
+# --- Timing (seconds) ---
+DEBOUNCE = (0, 0)              # extra wait before reading (the draft hold below already absorbs message bursts)
+READ_DELAY = (0, 0)            # "picking up the phone" before the chat is marked read
+THINK_DELAY = (0, 0)           # pause between reading and writing
+DRAFT_HOLD = (2, 3)            # the finished draft waits this long (visible + cancellable on /admin) before typing
+TYPING_CHARS_PER_SEC = (5, 9)  # typing speed while the "typing…" indicator is shown
 TYPING_LIMITS = (1.5, 20)      # min/max typing time per message
 BETWEEN_MESSAGES = (0.8, 3)    # pause between split messages
 MAX_PARTS = 3                  # max messages a reply is split into
@@ -40,8 +41,8 @@ RETRY_DELAY = (45, 90)         # wait between those attempts
 
 CONTEXT_MESSAGES = 30          # how much chat history the model sees
 if os.environ.get("USERBOT_HUMAN_PACING", "true").lower() not in ("1", "true", "yes"):
-    # Instant mode: reply as soon as the model answers (typing indicator only while generating).
-    DEBOUNCE = READ_DELAY = THINK_DELAY = TYPING_LIMITS = (0, 0)
+    # Instant mode: no draft hold and no typing simulation.
+    DRAFT_HOLD = TYPING_LIMITS = (0, 0)
     BETWEEN_MESSAGES = (0.3, 0.6)
 
 OWNER_ACTIVE_WINDOW = 120      # don't auto-reply if you personally wrote in the chat this recently
