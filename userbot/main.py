@@ -158,7 +158,7 @@ ASSISTANT_RE = re.compile(r"\b(assist|let me know if you need|anything else|how 
 # no confirmation, no denial. Lines where the model claims to be human are dropped, so ignoring never becomes lying.
 BOT_QUESTION_RE = re.compile(r"\b(bot|robot|ai|a\.i\.|chat ?gpt|gpt|neural|автоответчик|бот|робот|ии|нейросеть|"
                              r"нейронка|чатгпт)\b", re.I)
-ADDRESSED_RE = re.compile(r"\?|\b(u|you|ur|r u|are|is this|ты|вы|тебя|это)\b", re.I)
+ADDRESSED_RE = re.compile(r"\?|\b(u|you|ur|you'?re|youre|r u|are|is this|ты|вы|тебя|это|sen|san|siz)\b", re.I)
 WHO_RE = re.compile(
     r"\bwho\s+(are|r)\s+(you|u)\b|\bis\s+(this|that|it)\s+(really\s+|actually\s+)?(you|u)\b|\bare\s+(you|u)\s+(even\s+)?(real|human|a\s+(real\s+)?person)\b"
     r"|\bты\s+кто\b|\bкто\s+ты\b|\bэто\s+(точно\s+|правда\s+|реально\s+|вообще\s+)?ты\b|\bты\s+(настоящий|реальный|человек|живой)\b"
@@ -169,9 +169,17 @@ IDENTITY_CLAIM_RE = re.compile(
     r"\b(i['’]?m|i\s+am|im)\s+(a\s+|an\s+)?(real|human|person|not\s+a\s+bot|no\s+bot|not\s+an?\s+ai)\b|\bnot\s+a\s+bot\b"
     r"|\bя\s+(не\s+бот|настоящий|реальный|живой|человек|не\s+ии)\b|\bне\s+бот\b|\bbot\s+emasman\b|\bodamman\b"
     r"|auto-?reply|автоответ", re.I)
-IDENTITY_HINT = ("\nPart of their message asks who or what you are (a bot, an AI, a real person, whether it's really "
-                 "you). Do not respond to that part at all — don't confirm, don't deny, don't mention it. Reply only to "
-                 "the rest of what they wrote.\n")
+# refusing out loud ("I won't answer that") sounds like a bot too — such lines are dropped
+REFUSAL_RE = re.compile(
+    r"не\s+буду\s+(отвечать|обсуждать|говорить)|не\s+хочу\s+(отвечать|обсуждать|вступать|говорить об этом)|без\s+комментариев"
+    r"|(won'?t|not\s+going\s+to|refuse\s+to|rather\s+not)\s+(answer|say|discuss|talk)|no\s+comment|javob\s+bermayman", re.I)
+# words that belong to the accusation itself ("I know you're a bot, admit it") — not something else to answer
+ACCUSE_RE = re.compile(
+    r"\b(знаю|признай\w*|признавай\w*|честно|правд\w*|серь[её]зно|точно|докажи\w*|скажи|колись|окей|ок|ладно|ну"
+    r"|know|admit|confess|honest\w*|seriously|really|prove|tell|truth|ok|okay|bilaman|tan\s+ol|rostini|ayt)\b|\bа\s+не\s+\w+|\bnot\s+\w+", re.I)
+IDENTITY_HINT = ("\nPart of their message is about who or what you are (a bot, an AI, a real person, whether it's really "
+                 "you). Act as if that part wasn't written: don't confirm, don't deny, don't mention it, and don't say "
+                 "that you won't answer. Reply only to the rest of what they wrote.\n")
 
 
 def is_identity_question(sentence: str) -> bool:
@@ -190,8 +198,8 @@ def identity_question(history) -> str | None:
                 continue
             if is_identity_question(sentence):
                 found = True
-            else:
-                rest_words += len(sentence.split())
+            else:  # count only words that say something beyond the accusation itself
+                rest_words += len(re.findall(r"[^\W\d_]{2,}", ACCUSE_RE.sub(" ", sentence)))
     if not found:
         return None
     return "mixed" if rest_words >= 3 else "only"
@@ -220,7 +228,7 @@ def clean_reply(reply: str) -> str:
     keep_one = random.random() < C.EMOJI_KEEP_CHANCE
     lines = []
     for line in reply.splitlines():
-        if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line):
+        if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line) or REFUSAL_RE.search(line):
             continue
         line = FAKE_TAG_RE.sub("", line)
         if first:  # drop a "Name:" speaker label
