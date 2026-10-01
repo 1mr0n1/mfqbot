@@ -215,6 +215,27 @@ def unknown_words(them: str, draft: str) -> list[str]:
     return out
 
 
+def invented_uzbek(them: str, draft: str) -> str | None:
+    """In an Uzbek reply: a word that never appears in your chats (nor in their message, nor in English or
+    Russian-typed-in-Latin slang). Models make up plausible-looking Uzbek; your real vocabulary is the test."""
+    from . import lang
+
+    _load_words()
+    if not _vocab or lang.base(lang.detect(draft)) != "uz":
+        return None
+    theirs = set(re.findall(r"[^\W\d_]+(?:['ʻ‘’][^\W\d_]+)*", them.lower().replace("‘", "'").replace("’", "'").replace("ʻ", "'")))
+    for word in re.findall(r"[^\W\d_]+(?:['ʻ‘’][^\W\d_]+)*", draft.lower().replace("‘", "'").replace("’", "'").replace("ʻ", "'")):
+        plain = word.replace("'", "")
+        if len(plain) < 5 or word in theirs or word in _vocab or plain in _vocab or _is_english(word):
+            continue
+        # everyday spelling drops apostrophes and endings vary: accept if a known word shares most of it
+        stem = plain[:max(4, len(plain) - 3)]
+        if any(v.startswith(stem) for v in _vocab if v[:1] == plain[:1]):
+            continue
+        return word
+    return None
+
+
 def _norm(text: str) -> str:
     return re.sub(r"[\W_]+", " ", text.lower()).strip()
 
@@ -246,16 +267,21 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
     suspects = unknown_words(them, text)
     if suspects:
         return f"nonsense word '{suspects[0]}'"
+    made_up = invented_uzbek(them, text)
+    if made_up:
+        return f"Uzbek word you never use: '{made_up}'"
     return None
 
 
 # ---------- things the account must not decide or claim on its own ----------
 PLAN_RE = re.compile(
     r"\bго\b|пойд[её]шь|ид[её]шь|прид[её]шь|зайд[её]шь|приедешь|встрет\w*|давай\s+(в|на|завтра|сегодня|после)|поможешь|принес\w*|"
-    r"отдашь|ждём|ждем|выходи|подойд[её]шь|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
+    r"отдашь|ждём|ждем|выходи|подойд[её]шь|переночу\w*|купи\w*|позвони\w*|забери\w*|сходи\w*|съезди\w*|приезжай\w*|"
+    r"приходи\w*|заходи\w*|отнеси\w*|верни\w*|оплати\w*|закажи\w*|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
     r"\b(wanna|coming|come\s+(over|to)|meet|bring|let'?s)\b|kelasan\w*|borasan\w*|chiqasan\w*|uchrash\w*|olib\s+kel", re.I)
 COMMIT_RE = re.compile(
-    r"\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|"
+    r"\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|переночую|куплю|"
+    r"позвоню|заберу|схожу|съезжу|отнесу|верну|оплачу|закажу|поеду|пойду|"
     r"го|погнали|заходи|выхожу|иду|еду)\b|\bв\s+\d{1,2}([:.]\d\d)?\b|\b(давай|ок|окей|хорошо|да|конечно)\b[\s,]+\b(приду|буду|зайду|го|давай|помогу)\b|"
     r"\b(i'?ll\s+(come|be|bring|help)|coming|on\s+my\s+way|let'?s\s+go|sure\s+let'?s|yeah\s+let'?s|im\s+down)\b|"
     r"\b(kelaman|boraman|chiqaman|olib\s+kelaman|xop\s+kelaman)\b", re.I)

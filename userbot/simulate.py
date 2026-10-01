@@ -220,7 +220,12 @@ async def main():
             except Exception as e:  # a crash in the pipeline is a finding too
                 return {"id": sc["id"], "who": sc["who"], "tag": sc.get("tag", ""), "turns": [], "crash": repr(e)}
 
-    results = sorted(await asyncio.gather(*(guarded(s) for s in scenarios)), key=lambda r: r["id"])
+    results = []
+    for done in asyncio.as_completed([guarded(s) for s in scenarios]):
+        results.append(await done)
+        if out_path:  # save as we go: a long run that gets interrupted keeps everything finished so far
+            out_path.write_text(json.dumps(sorted(results, key=lambda r: r["id"]), ensure_ascii=False, indent=1))
+    results.sort(key=lambda r: r["id"])
     for r in results:
         print(f"#{r['id']:<3} [{r['who']}/{r['tag']}]" + (f"  CRASH {r['crash']}" if r.get("crash") else ""))
         for t in r["turns"]:
