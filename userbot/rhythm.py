@@ -41,8 +41,11 @@ def _wake_jitter(now: datetime) -> int:
     return random.Random(now.strftime("%Y-%m-%d")).randint(*C.WAKE_JITTER_MIN)
 
 
+awake_until = 0.0  # "stay up" override (.ai awake 2h): no sleeping before this time
+
+
 def asleep(now: datetime | None = None) -> bool:
-    if not C.RHYTHM:
+    if not C.RHYTHM or (now is None and time.time() < awake_until):
         return False
     now = now or datetime.now()
     if _in_window(C.SLEEP_WINDOW, now):

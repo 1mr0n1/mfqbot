@@ -4,6 +4,7 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai on / .ai off   — in a private chat: enable/disable auto-replies there
   .ai pause / resume — anywhere: stop/restart all auto-replies
   .ai pause 30m      — pause for a while (m/h/d), then resume automatically
+  .ai awake 2h       — stay up: ignore the night-time sleep for that long (.ai awake 0m = back to normal)
   .ai status         — anywhere: show current state
   .ai unread         — anywhere: answer unread private messages now (also done at startup)
   .ai save <tag>     — reply to your own voice/round video in Saved Messages to add it to the clip library
@@ -975,6 +976,15 @@ async def on_command(event):
             cancel(cid)
         note = (f"⏸ auto-replies paused for {tag} (until {datetime.fromtimestamp(state.paused_until):%H:%M %d.%m})"
                 if seconds else "⏸ all auto-replies paused until .ai resume")
+    elif arg == "awake":
+        duration = re.fullmatch(r"(\d+)([mhd])", tag or "2h")
+        seconds = int(duration.group(1)) * {"m": 60, "h": 3600, "d": 86400}[duration.group(2)] if duration else 7200
+        state.awake_until = rhythm.awake_until = time.time() + seconds if seconds else 0
+        state.save()
+        note = (f"🌙 staying up until {datetime.fromtimestamp(state.awake_until):%H:%M} — answering as usual"
+                if seconds else "😴 back to the normal sleep schedule")
+        if seconds:
+            spawn(reply_to_unread())
     elif arg == "resume":
         state.set_paused(False)
         note = "▶️ auto-replies resumed"
@@ -1409,6 +1419,7 @@ async def main():
     if not await client.is_user_authorized():
         raise SystemExit("Not logged in. Run once: .venv/bin/python -m userbot.login")
     me = await client.get_me()
+    rhythm.awake_until = state.awake_until
     log.info("Running as %s (@%s) | mode=%s | models=%s | paused=%s",
              full_name(me), me.username, C.REPLY_MODE, C.MODELS, state.is_paused())
     if C.REPLY_MODE == "all":

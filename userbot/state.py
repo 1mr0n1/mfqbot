@@ -12,6 +12,7 @@ class State:
         self.disabled: set[int] = set(data.get("disabled", []))
         self.manual: set[int] = set(data.get("manual", []))  # chats that are always left to you (with a note)
         self.paused: bool = data.get("paused", False)
+        self.awake_until: float = data.get("awake_until", 0)  # ".ai awake": don't sleep before this time
         self.approve: bool = data.get("approve", False)  # hold every draft until it's approved on the dashboard
         self.paused_until: float = data.get("paused_until", 0)  # temporary pause (unix time)
         # message ids the userbot sent, per chat — so style learning never mistakes them for yours
@@ -28,7 +29,7 @@ class State:
     def save(self):
         STATE_PATH.write_text(json.dumps({
             "enabled": sorted(self.enabled), "disabled": sorted(self.disabled), "paused": self.paused,
-            "manual": sorted(self.manual), "approve": self.approve,
+            "manual": sorted(self.manual), "approve": self.approve, "awake_until": self.awake_until,
             "paused_until": self.paused_until, "bot_sent": self.bot_sent,
             "bio_history": self.bio_history, "last_bio_at": self.last_bio_at,
             "salam_stickers": self.salam_stickers, "pfp_changes": self.pfp_changes,

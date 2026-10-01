@@ -16,7 +16,7 @@ STYLE_DIR = HERE / "style"  # written by learn_style.py (your personal messages 
 STYLE_EXAMPLES = 40         # of your real messages shown to the model per reply
 STYLE_PAIRS = 5             # random real "they wrote → you answered" exchanges shown per reply (general manner)
 CONTACT_PAIRS = 6           # same, for a person with their own style file (style/contacts/<username>.json)
-RECALL_PAIRS = 8            # plus the exchanges most similar to the incoming message (see recall.py)
+RECALL_PAIRS = int(os.environ.get("USERBOT_RECALL_PAIRS", "8"))            # plus the exchanges most similar to the incoming message (see recall.py)
 CLIPS_PATH = HERE / "clips.json"  # tag -> your voice/round-video clip in Saved Messages
 MEDIA_ENABLED = os.environ.get("USERBOT_MEDIA", "true").lower() in ("1", "true", "yes")
 

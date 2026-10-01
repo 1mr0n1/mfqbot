@@ -19,7 +19,7 @@ from . import lang
 from .import_export import PRIVATE_RE, burst_stats, exchange_pairs, parse_export
 from .learn_style import URL_RE, compute_stats, usable
 
-MAX_EXAMPLES, MAX_PAIRS = 800, 2000
+MAX_EXAMPLES, MAX_PAIRS = 800, 8000
 
 
 def keep(text: str) -> bool:
