@@ -81,8 +81,9 @@ Name, surname and photo are only changed by you (`.ai …` commands or `python -
 `USERBOT_REPLY_MODE=all` replies in every private chat (`.ai off` excludes one); `allowlist` only in chats
 enabled with `.ai on`. `USERBOT_HUMAN_PACING=false` replies instantly; `USERBOT_MEDIA=false` disables media.
 
-Safety behaviour: private chats only (no groups/channels/bots/Telegram service messages), stays quiet
-if you wrote in the chat within the last 2 minutes, cancels its reply if you start replying yourself,
+Safety behaviour: private chats only (no groups/channels/bots/Telegram service messages), answers whenever the other person writes (set
+`USERBOT_OWNER_WINDOW` to make it stay out for a while after you typed there yourself), drops its pending
+reply if you answer first,
 won't commit you to meetings/money/favors. Style is in `userbot/persona.md`, timing in `userbot/config.py`.
 Vision: photos the other person sends are passed to a model that can see them (`omni`, then `qwen`/`local`);
 text-only models get a `[photo]` placeholder. Unread DMs up to 24h old are answered at startup — private

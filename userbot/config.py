@@ -98,7 +98,9 @@ if os.environ.get("USERBOT_HUMAN_PACING", "true").lower() not in ("1", "true", "
     DRAFT_HOLD = TYPING_LIMITS = (0, 0)
     BETWEEN_MESSAGES = (0.3, 0.6)
 
-OWNER_ACTIVE_WINDOW = 120      # don't auto-reply if you personally wrote in the chat this recently
+# After you type in a chat yourself, wait this long before the bot answers there again. 0 = never wait:
+# the bot answers whenever the other person writes, even if you were just in that chat.
+OWNER_ACTIVE_WINDOW = int(os.environ.get("USERBOT_OWNER_WINDOW", "0"))
 VISION = os.environ.get("USERBOT_VISION", "true").lower() in ("1", "true", "yes")
 VISION_MODELS = ["omni", "qwen", "local"]  # models that can look at a picture (used to recognize salam stickers)
 MAX_IMAGES = 2                 # newest photos from the other person passed to the model per reply
