@@ -1,8 +1,8 @@
 """Change your Telegram profile from the command line (works while the userbot is running).
 
   .venv/bin/python -m userbot.profile show
-  .venv/bin/python -m userbot.profile name "Imron"
-  .venv/bin/python -m userbot.profile surname "Aripov"        # "-" clears it
+  .venv/bin/python -m userbot.profile name "John"
+  .venv/bin/python -m userbot.profile surname "Smith"         # "-" clears it
   .venv/bin/python -m userbot.profile bio "just vibing 😭"     # "-" clears it
   .venv/bin/python -m userbot.profile photo path/to/image.jpg
 """

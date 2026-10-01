@@ -173,7 +173,7 @@ def clean_reply(reply: str) -> str:
         if ASSISTANT_RE.search(line):
             continue
         line = FAKE_TAG_RE.sub("", line)
-        if first:  # drop a "Imron:" speaker label
+        if first:  # drop a "Name:" speaker label
             line = re.sub(rf"^\s*{re.escape(first)}\s*:\s*", "", line, flags=re.I)
         line = REPEAT_RE.sub(lambda m: m.group(1) * 8, line).strip()
         if line:
