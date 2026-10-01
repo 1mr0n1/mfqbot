@@ -28,33 +28,84 @@ RU_TRANSLIT = {
     "spasibo", "pozhaluysta", "ladno", "horosho", "xorosho", "khorosho", "da", "net", "ne", "segodnya", "zavtra",
     "skazhi", "znaesh", "ponyal", "seychas", "shas", "potom", "pochemu", "kogda", "gde", "skolko", "brat",
 }
-NAMES = {"uz": "Uzbek", "uz-cyrl": "Uzbek written in Cyrillic", "ru": "Russian",
-         "ru-latn": "Russian typed in Latin letters", "en": "English"}
+NAMES = {
+    "uz": "Uzbek", "uz-cyrl": "Uzbek written in Cyrillic", "ru": "Russian", "ru-latn": "Russian typed in Latin letters",
+    "en": "English", "es": "Spanish", "fr": "French", "de": "German", "pt": "Portuguese", "it": "Italian",
+    "tr": "Turkish", "id": "Indonesian", "pl": "Polish", "nl": "Dutch", "az": "Azerbaijani", "uk": "Ukrainian",
+    "kk": "Kazakh", "ky": "Kyrgyz", "tg": "Tajik", "ar": "Arabic", "fa": "Persian", "he": "Hebrew", "hi": "Hindi",
+    "zh": "Chinese", "ja": "Japanese", "ko": "Korean", "th": "Thai", "el": "Greek", "ka": "Georgian", "hy": "Armenian",
+    "other": "the same language they wrote in",
+}
+
+# Scripts that identify a language (or family) on their own.
+SCRIPTS = [
+    ("ja", r"[\u3040-\u30ff]"), ("ko", r"[\uac00-\ud7af]"), ("zh", r"[\u4e00-\u9fff]"),
+    ("fa", r"[پچژگ]"), ("ar", r"[\u0600-\u06ff]"), ("he", r"[\u0590-\u05ff]"), ("hi", r"[\u0900-\u097f]"),
+    ("th", r"[\u0e00-\u0e7f]"), ("el", r"[\u0370-\u03ff]"), ("ka", r"[\u10a0-\u10ff]"), ("hy", r"[\u0530-\u058f]"),
+]
+# Cyrillic languages told apart by their special letters (checked before falling back to Russian).
+CYRILLIC_MARKS = [("uz-cyrl", "ўЎ"), ("tg", "ӣӯҷӢӮҶ"), ("kk", "әұӘҰ"), ("uk", "їєґіЇЄҐІ"), ("ky", "ңөүҢӨҮ"),
+                  ("uz-cyrl", "қғҳҚҒҲ")]
+# Very common words per Latin-script language.
+LATIN_WORDS = {
+    "en": EN_STOP | {"hello", "hi", "hey", "thanks", "thank", "please", "why", "when", "where", "who", "your", "we",
+                     "they", "be", "at", "from", "will", "would", "about", "there", "good", "ok", "okay", "lol"},
+    "es": {"hola", "que", "qué", "como", "cómo", "estas", "estás", "gracias", "por", "favor", "pero", "muy", "bien",
+           "donde", "dónde", "cuando", "cuándo", "tengo", "tienes", "esta", "está", "eres", "soy", "los", "las", "una",
+           "para", "porque", "buenos", "buenas", "dias", "días", "amigo", "vale", "también"},
+    "fr": {"bonjour", "salut", "merci", "oui", "non", "comment", "ça", "va", "est", "une", "des", "les", "pour", "avec",
+           "pas", "mais", "très", "bien", "pourquoi", "quand", "où", "suis", "tu", "je", "vous", "nous", "c'est", "quoi"},
+    "de": {"hallo", "danke", "bitte", "ja", "nein", "wie", "geht", "und", "ist", "nicht", "ich", "du", "wir", "sie",
+           "das", "der", "die", "ein", "eine", "mit", "für", "aber", "warum", "wann", "wo", "gut", "auch", "bin", "was"},
+    "pt": {"olá", "ola", "obrigado", "obrigada", "sim", "não", "nao", "como", "você", "voce", "está", "tudo", "bem",
+           "por", "favor", "mas", "muito", "onde", "quando", "tenho", "uma", "para", "porque", "bom", "dia", "isso"},
+    "it": {"ciao", "grazie", "prego", "sì", "come", "stai", "sono", "che", "non", "per", "favore", "ma", "molto", "bene",
+           "dove", "quando", "perché", "perche", "una", "con", "anche", "buongiorno", "cosa", "sei", "questo"},
+    "tr": {"merhaba", "selam", "teşekkürler", "tesekkurler", "evet", "hayır", "hayir", "nasılsın", "nasilsin", "iyi",
+           "ben", "sen", "biz", "ve", "bir", "bu", "ne", "için", "icin", "ama", "çok", "cok", "değil", "degil", "var",
+           "yok", "nerede", "zaman", "tamam", "lütfen", "lutfen", "günaydın", "naber", "nasıl", "nasil"},
+    "id": {"halo", "terima", "kasih", "ya", "tidak", "apa", "kabar", "saya", "kamu", "dan", "ini", "itu", "di", "ke",
+           "yang", "untuk", "dengan", "tapi", "sangat", "baik", "kapan", "dimana", "kenapa", "aku", "sudah", "belum"},
+    "pl": {"cześć", "czesc", "dziękuję", "dziekuje", "tak", "nie", "jak", "się", "sie", "masz", "jest", "to", "na",
+           "ale", "bardzo", "dobrze", "gdzie", "kiedy", "dlaczego", "jestem", "co", "proszę", "prosze"},
+    "nl": {"hallo", "dank", "bedankt", "ja", "nee", "hoe", "gaat", "het", "en", "is", "niet", "ik", "jij", "wij",
+           "een", "met", "voor", "maar", "waarom", "wanneer", "waar", "goed", "ook", "ben", "wat", "alsjeblieft"},
+    "az": {"salam", "necəsən", "necesen", "sağol", "sagol", "bəli", "beli", "xeyr", "mən", "sən", "və", "bu", "nə",
+           "üçün", "ucun", "amma", "çox", "yaxşı", "yaxsi", "harada", "niyə", "təşəkkür"},
+}
 
 
 def _words(text: str) -> list[str]:
     text = text.lower().replace("‘", "'").replace("’", "'").replace("`", "'").replace("ʻ", "'")
-    return re.findall(r"[a-zа-яёўқғҳ']+", text)
+    return re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)*", text)
 
 
 def detect(text: str) -> str | None:
-    """-> 'uz' | 'uz-cyrl' | 'ru' | 'ru-latn' | 'en' | None (no letters)."""
+    """-> language code (see NAMES), 'other' for an unrecognized language, or None when there are no letters."""
     words = _words(text)
     if not words:
         return None
-    cyr = sum(bool(re.search("[а-яёўқғҳ]", w)) for w in words)
+    for code, pattern in SCRIPTS:
+        if re.search(pattern, text):
+            return code
+    cyr = sum(bool(re.search("[\u0400-\u04ff]", w)) for w in words)
     if cyr > len(words) / 2:
-        return "uz-cyrl" if UZ_CYRILLIC & set(text) else "ru"
+        for code, marks in CYRILLIC_MARKS:
+            if set(marks) & set(text):
+                return code
+        return "ru"
     uz = sum(w in UZ_WORDS or "o'" in w or "g'" in w for w in words)
     weak = sum(w in UZ_WEAK for w in words)
     if uz or (weak and not EN_STOP & set(words)):  # weak words only count when it doesn't look like English
         uz += weak
-    ru = sum(w in RU_TRANSLIT for w in words)
-    if uz and uz >= ru:
-        return "uz"
-    if ru:
-        return "ru-latn"
-    return "en"
+    scores = {code: sum(w in vocab for w in words) for code, vocab in LATIN_WORDS.items()}
+    scores["uz"] = uz * 2  # home languages win ties
+    scores["ru-latn"] = sum(w in RU_TRANSLIT for w in words) * 1.5
+    best = max(scores, key=scores.get)
+    # One shared word isn't enough to name a foreign language in a longer message.
+    if scores[best] and (best in ("uz", "ru-latn", "en") or scores[best] >= 2 or len(words) < 3):
+        return best
+    return "en" if len(words) < 3 else "other"  # nothing recognized: short = treat as English, longer = unknown
 
 
 def base(code: str | None) -> str | None:

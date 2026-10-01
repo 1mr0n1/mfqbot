@@ -59,6 +59,8 @@ Control it by typing these from your account (the command is deleted, confirmati
 | `.ai unread` | anywhere | answer unread private messages now (also done at startup) |
 | `.ai save <tag>` | Saved Messages, as a reply | add your voice / round video message to the clip library |
 | `.ai clips` / `.ai forget <tag>` | anywhere | list / remove clips |
+| `.ai savepack` | anywhere, as a reply to a sticker | add that sticker's whole pack to your account |
+| `.ai salam` / `.ai notsalam` | anywhere, as a reply to a sticker | teach that it is / isn't an "Assalomu alaykum" sticker |
 | `.ai name …` / `.ai surname …` / `.ai bio …` | Saved Messages | change your profile (`-` clears surname/bio) |
 | `.ai photo` | Saved Messages, as a reply to a photo | set it as your profile photo |
 | `.ai profile` | Saved Messages | show current name / surname / bio |
@@ -110,7 +112,13 @@ your real chat with them shows, in one language at a time, without stickers/GIFs
 .venv/bin/python -m userbot.import_contact "chat-histories/ChatExport_X" "YourName" their_username
 ```
 
-Replies are language-aware (Uzbek incl. everyday Tashkent forms, Russian, English), mirror formality
+Salam: a written "Assalomu alaykum (va rahmatullohi va barokatuh)" in Latin, Cyrillic or Arabic script gets the
+fixed proper answer in the same script and length; a salam sticker is answered with the very same sticker
+and its pack is saved. Stickers are recognized by one look from a vision model (remembered per sticker) or by
+what you taught with `.ai salam`.
+
+Replies are language-aware (Uzbek incl. everyday Tashkent forms, Russian, English, plus ~25 other languages
+by script or common words; anything unrecognized is answered in the language it was written in), mirror formality
 (вы/siz for formal messages) and stay non-committal about plans, times, money and favors.
 Model routing: `USERBOT_MODELS=nemotron,omni,…` — text goes to the first model, photos to vision models first.
 

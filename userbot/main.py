@@ -8,6 +8,8 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai unread         — anywhere: answer unread private messages now (also done at startup)
   .ai save <tag>     — reply to your own voice/round video in Saved Messages to add it to the clip library
   .ai forget <tag>   — remove a clip;  .ai clips — list clips
+  .ai savepack       — reply to a sticker: add its whole pack to your account
+  .ai salam / .ai notsalam — reply to a sticker: teach that it is / isn't an "Assalomu alaykum" sticker
   (Saved Messages only)
   .ai name <first name> / .ai surname <last name or -> / .ai bio <text or -> / .ai profile
   .ai photo          — reply to a photo with this to make it your profile photo
@@ -28,7 +30,7 @@ from telethon import TelegramClient, errors, events, functions
 from telethon.tl.types import User
 
 from . import config as C
-from . import lang, media
+from . import lang, media, salam
 from . import trace
 from .autoprofile import bio_loop
 from .state import State
@@ -367,7 +369,29 @@ async def reply_flow(chat_id: int, contact: User):
         await client.send_read_acknowledge(chat_id)
         await asyncio.sleep(rand(C.THINK_DELAY))
 
-        if asks_if_bot(history):
+        greeting = await salam.check(client, state, http, history)
+        if greeting.sticker:  # a salam sticker is answered with the very same sticker
+            trace.emit("decision", who, "They sent an 'Assalomu alaykum' sticker → answering with the same sticker")
+            await asyncio.sleep(rand(C.DRAFT_HOLD))
+            our_texts.setdefault(chat_id, []).append("")
+            sent = await client.send_file(chat_id, greeting.sticker.media)
+            our_ids.add(sent.id)
+            state.record_sent(chat_id, sent.id)
+            trace.emit("sent", who, "[the same salam sticker]")
+            log.info("%s: answered salam sticker with the same sticker", who)
+            try:
+                pack = await salam.save_pack(client, greeting.sticker)
+                if pack:
+                    trace.emit("decision", who, f"Saved sticker pack '{pack}' to the account")
+            except Exception:
+                log.exception("Could not save sticker pack")
+            if not greeting.rest:
+                return
+
+        if greeting.reply and not greeting.rest:
+            reply = greeting.reply  # fixed text, never written by the model
+            trace.emit("decision", who, "They wrote the salam greeting → sending the fixed proper answer (model not used)")
+        elif asks_if_bot(history):
             last = next((m.raw_text for m in history if not m.out and m.raw_text), "")
             reply = HONEST_REPLY["cyrillic" if re.search("[А-Яа-я]", last) else "latin"]
             trace.emit("decision", who, "They asked if this is a bot → sending the fixed honest auto-reply (model not used)")
@@ -389,6 +413,8 @@ async def reply_flow(chat_id: int, contact: User):
                 log.warning("%s: giving up, no model answered", who)
                 trace.emit("warning", who, "Giving up — no model answered")
             reply = clean_reply(reply or "")
+            if greeting.reply:  # salam + something else: fixed greeting first, then the model's answer
+                reply = (greeting.reply + "\n" + salam.strip_greeting_line(reply)).strip()
         if not reply:
             trace.emit("decision", who, "Nothing to send — staying quiet")
             return
@@ -479,6 +505,18 @@ async def on_command(event):
 
     if arg in ("save", "forget", "clips"):
         await client.send_message("me", clip_command(arg, tag, replied, in_saved))
+        return
+    if arg in ("savepack", "salam", "notsalam"):
+        if not replied or not replied.sticker:
+            note = f"⚠️ reply to a sticker with .ai {arg}"
+        elif arg == "savepack":
+            pack = await salam.save_pack(client, replied)
+            note = f"✅ sticker pack '{pack}' added to your account" if pack else "⚠️ that sticker has no pack"
+        else:
+            state.remember_salam_sticker(str(replied.document.id), arg == "salam")
+            note = ("✅ learned: that is an 'Assalomu alaykum' sticker — I'll answer it with the same sticker"
+                    if arg == "salam" else "✅ learned: that is not a salam sticker")
+        await client.send_message("me", note)
         return
 
     if arg in ("on", "off") and (in_saved or not event.is_private):

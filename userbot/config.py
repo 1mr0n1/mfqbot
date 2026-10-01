@@ -49,6 +49,7 @@ if os.environ.get("USERBOT_HUMAN_PACING", "true").lower() not in ("1", "true", "
 
 OWNER_ACTIVE_WINDOW = 120      # don't auto-reply if you personally wrote in the chat this recently
 VISION = os.environ.get("USERBOT_VISION", "true").lower() in ("1", "true", "yes")
+VISION_MODELS = ["omni", "qwen", "local"]  # models that can look at a picture (used to recognize salam stickers)
 MAX_IMAGES = 2                 # newest photos from the other person passed to the model per reply
 UNREAD_MAX_AGE = 24 * 3600     # unread DMs older than this are left alone
 UNREAD_SCAN_DIALOGS = 150      # how many recent chats to scan for unread DMs

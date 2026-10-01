@@ -14,6 +14,8 @@ class State:
         self.paused_until: float = data.get("paused_until", 0)  # temporary pause (unix time)
         # message ids the userbot sent, per chat — so style learning never mistakes them for yours
         self.bot_sent: dict[str, list[int]] = data.get("bot_sent", {})
+        # sticker document id -> is it an "Assalomu alaykum" sticker (learned by vision or taught with .ai salam)
+        self.salam_stickers: dict[str, bool] = data.get("salam_stickers", {})
         self.bio_history: list[str] = data.get("bio_history", [])
         self.last_bio_at: float = data.get("last_bio_at", 0)
 
@@ -22,7 +24,12 @@ class State:
             "enabled": sorted(self.enabled), "disabled": sorted(self.disabled), "paused": self.paused,
             "paused_until": self.paused_until, "bot_sent": self.bot_sent,
             "bio_history": self.bio_history, "last_bio_at": self.last_bio_at,
+            "salam_stickers": self.salam_stickers,
         }, indent=2, ensure_ascii=False))
+
+    def remember_salam_sticker(self, doc_id: str, is_salam: bool):
+        self.salam_stickers[doc_id] = is_salam
+        self.save()
 
     def record_bio(self, bio: str):
         self.bio_history = (self.bio_history + [bio])[-20:]
