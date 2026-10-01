@@ -91,8 +91,8 @@ CLASSIFY = (
 )
 
 
-async def sensitive_reason(http: httpx.AsyncClient, name: str, history) -> str | None:
-    """-> why the owner should take this one, or None."""
+async def sensitive_reason(http: httpx.AsyncClient, name: str, history, keywords_only: bool = False) -> str | None:
+    """-> why the owner should take this one, or None. keywords_only skips the model's judgment call."""
     texts = [m.raw_text for m in itertools.takewhile(lambda m: not m.out, history) if m.raw_text]
     joined = "\n".join(reversed(texts))
     if not joined.strip():
@@ -100,7 +100,7 @@ async def sensitive_reason(http: httpx.AsyncClient, name: str, history) -> str |
     for reason, pattern in STRONG:
         if re.search(pattern, joined, re.I):
             return reason
-    if len(joined.split()) < 4:
+    if keywords_only or len(joined.split()) < 4:
         return None  # too short to be worth a model call
     try:
         resp = await http.post("/complete", json={

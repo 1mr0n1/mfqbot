@@ -101,6 +101,9 @@ Name, surname and photo are only changed by you (`.ai …` commands or `python -
   inside that person's chat. Notes are never taken from the bot's own messages.
 - **Not everything gets a reply** — an "ok" / "👍" / "спасибо" after your message is left alone or gets an emoji
   reaction instead of text (`USERBOT_SMART_SKIP`).
+- **Identity questions are ignored** — "are you a bot?", "who are you?", "is this really you?" get no answer
+  (neither confirmed nor denied; any line claiming to be human is dropped). If the message also says
+  something else, only that part is answered.
 - **Hand-off** — money, verification codes/passwords, emergencies, or someone upset / wanting a serious talk are
   not answered: the message stays unread, you get a 🚨 note in Saved Messages, and the account stays out of
   that chat for 30 minutes or until you write there (`USERBOT_HANDOFF`).
@@ -144,8 +147,7 @@ This writes `userbot/style/` (profile + 400 real example messages, git-ignored);
 profile and 40 random examples. Re-run any time — the userbot picks it up without a restart.
 
 Guards: model reasoning is switched off for replies and any reply that looks like leaked reasoning is
-never sent; assistant-speak lines are dropped; "are you a bot?" always gets a fixed honest auto-reply
-and a heads-up in your Saved Messages.
+never sent; assistant-speak lines are dropped; identity questions ("are you a bot?") are ignored.
 
 ⚠️ `userbot/account.session` gives full access to your account — never share or commit it.
 Telegram may restrict accounts that look automated; keep volumes low.

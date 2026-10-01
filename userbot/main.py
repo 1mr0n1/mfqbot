@@ -152,25 +152,47 @@ def looks_safe(reply: str) -> bool:
 ASSISTANT_RE = re.compile(r"\b(assist|let me know if you need|anything else|how can i help|feel free|happy to help)\b",
                           re.I)
 
-# Asking whether they're talking to a bot/AI gets an honest fixed answer — never left to the model.
+# Questions about who or what is answering ("are you a bot?", "who are you?", "is this really you?") are ignored:
+# no confirmation, no denial. Lines where the model claims to be human are dropped, so ignoring never becomes lying.
 BOT_QUESTION_RE = re.compile(r"\b(bot|robot|ai|a\.i\.|chat ?gpt|gpt|neural|автоответчик|бот|робот|ии|нейросеть|"
                              r"нейронка|чатгпт)\b", re.I)
 ADDRESSED_RE = re.compile(r"\?|\b(u|you|ur|r u|are|is this|ты|вы|тебя|это)\b", re.I)
-HONEST_REPLY = {
-    "cyrillic": "Я сейчас занят, это автоответ. Отвечу лично чуть позже",
-    "latin": "im busy rn, this is an auto-reply. ill answer personally later",
-}
+WHO_RE = re.compile(
+    r"\bwho\s+(are|r)\s+(you|u)\b|\bis\s+(this|that|it)\s+(really\s+|actually\s+)?(you|u)\b|\bare\s+(you|u)\s+(even\s+)?(real|human|a\s+(real\s+)?person)\b"
+    r"|\bты\s+кто\b|\bкто\s+ты\b|\bэто\s+(точно\s+|правда\s+|реально\s+|вообще\s+)?ты\b|\bты\s+(настоящий|реальный|человек|живой)\b"
+    r"|\b(sen\s+)?kimsan\b|\b(rostdan|haqiqatan)\s+(ham\s+)?senmi\b|\bsenmisan\b|\bodammisan\b", re.I)
+# "who is this?" is only about identity when it stands alone (otherwise it's about a photo, a person, a video…)
+WHO_ALONE_RE = re.compile(r"^\W*(who(['’]s|\s+is)\s+this|кто\s+это|а?\s*это\s+кто|bu\s+kim)\W*$", re.I)
+IDENTITY_CLAIM_RE = re.compile(
+    r"\b(i['’]?m|i\s+am|im)\s+(a\s+|an\s+)?(real|human|person|not\s+a\s+bot|no\s+bot|not\s+an?\s+ai)\b|\bnot\s+a\s+bot\b"
+    r"|\bя\s+(не\s+бот|настоящий|реальный|живой|человек|не\s+ии)\b|\bне\s+бот\b|\bbot\s+emasman\b|\bodamman\b"
+    r"|auto-?reply|автоответ", re.I)
+IDENTITY_HINT = ("\nPart of their message asks who or what you are (a bot, an AI, a real person, whether it's really "
+                 "you). Do not respond to that part at all — don't confirm, don't deny, don't mention it. Reply only to "
+                 "the rest of what they wrote.\n")
 
 
-def asks_if_bot(history) -> bool:
-    """True if the other person's latest messages (since your last one) ask about a bot/AI."""
-    for msg in history:  # newest first
-        if msg.out:
-            return False
-        text = msg.raw_text or ""
-        if BOT_QUESTION_RE.search(text) and ADDRESSED_RE.search(text):
-            return True
-    return False
+def is_identity_question(sentence: str) -> bool:
+    return bool((BOT_QUESTION_RE.search(sentence) and ADDRESSED_RE.search(sentence))
+                or WHO_RE.search(sentence) or WHO_ALONE_RE.match(sentence))
+
+
+def identity_question(history) -> str | None:
+    """-> 'only' (nothing else was said), 'mixed' (there is also something to answer) or None."""
+    found, rest_words = False, 0
+    for msg in itertools.takewhile(lambda m: not m.out, history):
+        if getattr(msg, "photo", None) or getattr(msg, "voice", None):
+            rest_words += 3  # media counts as something to answer
+        for sentence in re.split(r"(?<=[.?!,;\n])\s*", msg.raw_text or ""):
+            if not sentence.strip():
+                continue
+            if is_identity_question(sentence):
+                found = True
+            else:
+                rest_words += len(sentence.split())
+    if not found:
+        return None
+    return "mixed" if rest_words >= 3 else "only"
 
 
 FAKE_TAG_RE = re.compile(r"\[(?!(?:sticker|gif|voice|video)\s)[^\]]*\]", re.I)  # e.g. echoed "[photo]"
@@ -181,7 +203,7 @@ def clean_reply(reply: str) -> str:
     first = (me.first_name or "").strip() if me else ""
     lines = []
     for line in reply.splitlines():
-        if ASSISTANT_RE.search(line):
+        if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line):
             continue
         line = FAKE_TAG_RE.sub("", line)
         if first:  # drop a "Name:" speaker label
@@ -411,7 +433,10 @@ async def reply_flow(chat_id: int, contact: User):
             log.info("%s: you're active here, holding off %.0fs", who, wait)
             trace.emit("decision", who, f"You wrote in this chat recently — holding off {wait:.0f}s so I don't interrupt")
             await asyncio.sleep(wait + rand(C.READ_DELAY))
-        reason = await judge.sensitive_reason(http, full_name(me), history) if C.HANDOFF else None
+        # Questions about who/what is answering are simply ignored — they are not a reason to hand the chat over.
+        identity = identity_question(history)
+        reason = (await judge.sensitive_reason(http, full_name(me), history, keywords_only=identity is not None)
+                  if C.HANDOFF else None)
         if reason:  # this one is yours: don't answer, don't even mark it read
             state.hand_off(chat_id, C.HANDOFF_HOLD)
             snippet = " / ".join(m.raw_text for m in reversed(list(itertools.takewhile(lambda m: not m.out, history)))
@@ -467,13 +492,14 @@ async def reply_flow(chat_id: int, contact: User):
         if greeting.reply and not greeting.rest:
             reply = greeting.reply  # fixed text, never written by the model
             trace.emit("decision", who, "They wrote the salam greeting → sending the fixed proper answer (model not used)")
-        elif asks_if_bot(history):
-            last = next((m.raw_text for m in history if not m.out and m.raw_text), "")
-            reply = HONEST_REPLY["cyrillic" if re.search("[А-Яа-я]", last) else "latin"]
-            trace.emit("decision", who, "They asked if this is a bot → sending the fixed honest auto-reply (model not used)")
-            await client.send_message("me", f"🤖 {who} asked if they're talking to a bot — "
-                                            f"sent the honest auto-reply. You may want to answer yourself.")
+        elif identity == "only":
+            log.info("%s: identity question ignored", who)
+            trace.emit("decision", who, "They asked who/what is answering — ignoring it, no reply")
+            return
         else:
+            if identity == "mixed":
+                trace.emit("decision", who, "Their message also asks who/what is answering — ignoring that part")
+                hint += IDENTITY_HINT
             trace.emit("decision", who, "Read the chat — writing a reply")
             for attempt in range(C.GENERATE_RETRIES + 1):
                 if attempt:  # every model failed — come back later, like a busy person would
