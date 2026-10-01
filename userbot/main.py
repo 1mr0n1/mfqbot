@@ -38,7 +38,7 @@ from telethon import TelegramClient, errors, events, functions
 from telethon.tl.types import ReactionEmoji, User
 
 from . import config as C
-from . import daylog, judge, lang, media, memory, pfp, punct, quirks, rhythm, salam, voice
+from . import daylog, judge, lang, media, memory, pfp, punct, quirks, recall, rhythm, salam, voice
 from . import trace
 from .autoprofile import bio_loop
 from .state import State
@@ -262,6 +262,19 @@ def split_reply(reply: str) -> list[str]:
     return parts
 
 
+HOLDOUT: set[str] = set()  # replies hidden from the examples (the simulator's answer key); empty in production
+
+
+def holdout_key(text: str) -> str:
+    return re.sub(r"[\W_]+", " ", text.lower()).strip()
+
+
+def visible(items: list, text_of) -> list:
+    if not HOLDOUT:
+        return items
+    return [i for i in items if not any(holdout_key(line) in HOLDOUT for line in text_of(i).splitlines())]
+
+
 def _prefer(items: list, wanted, key, count: int) -> list:
     """Up to `count` random items, taking the ones where key(item) == wanted first."""
     matching = [i for i in items if key(i) == wanted] if wanted else []
@@ -279,6 +292,8 @@ def contact_style_path(contact: User):
 def contact_style_block(path, incoming: str) -> str:
     """Style for one specific person, built only from your real chat with them."""
     data = json.loads(path.read_text())
+    data["pairs"] = visible(data["pairs"], lambda p: p["me"])
+    data["examples"] = visible(data["examples"], lambda m: m)
     st, wanted = data["stats"], lang.base(lang.detect(incoming))
     turns = ", ".join(f"{k} message(s) in a row {v}%" for k, v in st.get("messages_per_turn_pct", {}).items())
     block = (
@@ -298,13 +313,16 @@ def contact_style_block(path, incoming: str) -> str:
     in_lang = [m for m in data["examples"] if lang.base(lang.detect(m)) == reply_lang] or data["examples"]
     examples = random.sample(in_lang, min(C.STYLE_EXAMPLES, len(in_lang)))
     block += "\nReal messages you sent them:\n" + "\n".join(f"- {m.replace(chr(10), ' / ')}" for m in examples) + "\n"
-    same = [p for p in relevant if p["lang"] == reply_lang]
+    recalled, used = recall.block(recall.index_for((str(path), path.stat().st_mtime), data["pairs"]),
+                                  incoming, C.RECALL_PAIRS)
+    same = [p for p in relevant if p["lang"] == reply_lang and p not in used]
     pairs = random.sample(same, min(C.CONTACT_PAIRS, len(same)))
     if pairs:
         block += ("\nReal exchanges with them — what they wrote and what you actually answered "
                   "(copy the manner and the language choice, never the content):\n"
                   + "\n".join(f"THEM: {p['them'].replace(chr(10), ' / ')}\nYOU: {p['me'].replace(chr(10), ' / ')}"
                               for p in pairs) + "\n")
+    block += recalled
     name = {"uz": "Uzbek (Latin letters, exactly the everyday forms shown above)", "ru": "Russian",
             "en": "English"}.get(reply_lang, "the language of the examples above")
     block += (f"\nLanguage note: write your whole reply in {name}. Use only words and forms that appear in your "
@@ -351,21 +369,23 @@ def style_block(contact_name: str = "", incoming: str = "", contact: User | None
     block = f"How {full_name(me)} texts — follow this closely, it matters more than the generic rules above:\n"
     block += profile_path.read_text().strip() + "\n"
     if examples_path.exists():
-        examples = json.loads(examples_path.read_text())
+        examples = visible(json.loads(examples_path.read_text()), lambda m: m)
         # Mostly messages in the language of this conversation, so the right register gets copied.
         picks = _prefer(examples, wanted, lambda m: lang.base(lang.detect(m)), C.STYLE_EXAMPLES)
         block += ("\nReal messages they've sent (for style only — don't reuse their content):\n"
                   + "\n".join(f"- {m.replace(chr(10), ' / ')}" for m in picks) + "\n")
     if pairs_path.exists():
-        pairs = json.loads(pairs_path.read_text())
-        same_person = [p for p in pairs if p["with"] == contact_name]
-        picks = (random.sample(same_person, min(C.STYLE_PAIRS, len(same_person))) if same_person
-                 else _prefer(pairs, wanted, lambda p: lang.base(p.get("lang")), C.STYLE_PAIRS))
+        pairs = visible(json.loads(pairs_path.read_text()), lambda p: p["me"])
+        recalled, used = recall.block(recall.index_for((str(pairs_path), pairs_path.stat().st_mtime), pairs),
+                                      incoming, C.RECALL_PAIRS)
+        rest = [p for p in pairs if p not in used]
+        picks = _prefer(rest, wanted, lambda p: lang.base(p.get("lang")), C.STYLE_PAIRS)
         if picks:
             block += ("\nReal exchanges — what someone wrote and what they actually answered "
                       "(copy the manner, never the content):\n"
                       + "\n".join(f"THEM: {p['them'].replace(chr(10), ' / ')}\nYOU: {p['me'].replace(chr(10), ' / ')}"
                                   for p in picks) + "\n")
+        block += recalled
     if code:
         block += (f"\nLanguage note: their latest message is in {lang.NAMES[code]}. Write your whole reply in "
                   "that language and script.\n")

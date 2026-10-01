@@ -154,8 +154,12 @@ Open http://127.0.0.1:8000/admin while the backend and userbot run.
   own text with normal typing.
 - **Pause / Resume** for everything.
 
-Events live in memory only. The page can send messages from your account, and it has no password — it is
-reachable only from this machine; never expose port 8000.
+The layout adapts to phones and tablets. Events live in memory only.
+
+On the Mac itself the page needs no password. To use it from a phone or anywhere else, deploy the static copy in
+`dashboard/` (Vercel) and reach the backend through a tunnel — see `dashboard/README.md`. From outside, the
+backend serves only `/admin/*` and only with `ADMIN_TOKEN`; nothing else is reachable, and with no token set
+remote access is off. The dashboard can send messages from your account: treat the token like a password.
 
 ### Teaching it your texting style
 

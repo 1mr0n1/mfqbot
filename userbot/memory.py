@@ -7,6 +7,7 @@ Both are git-ignored and stay on this machine; they are sent to the model as par
 """
 import json
 import logging
+import re
 import time
 
 import httpx
@@ -17,13 +18,28 @@ log = logging.getLogger("userbot.memory")
 
 MAX_NOTES = 40
 EXTRACT = (
-    "Below are messages that {who} sent in a private chat. List anything worth remembering about THEM for future "
-    "conversations: lasting facts about them (job, school, family, where they live, what they like), plans or dates "
-    "they mentioned, things they asked for or are waiting on. Skip small talk, greetings, jokes and anything "
-    "temporary. Each item: one short line in English, starting with '- They ' (never use their name). At most 3 items. "
-    "If nothing is worth "
-    "remembering, answer exactly NONE.\n{known}\nMESSAGES:\n{messages}"
+    "Below are messages that {who} sent in a private chat. Copy out only concrete facts they stated about themselves "
+    "that will still matter in a week: where they live, study or work, family, birthdays and dates, plans with a "
+    "date, things they asked you for and are waiting on. Write each fact in the SAME language they used, with "
+    "their own words, as a short line starting with '- '. At most 3.\n"
+    "Do NOT interpret, guess feelings or intentions, describe the conversation, or note questions, greetings, "
+    "jokes, opinions or anything about AI or bots. If there is no such fact, answer exactly NONE.\n"
+    "{known}\nMESSAGES:\n{messages}"
 )
+# things a model writes when it is interpreting instead of quoting a fact
+SPECULATION_RE = re.compile(
+    r"\b(may|might|seems?|appears?|possibly|probably|likely|suggest\w*|indicat\w*|seeking|questioning|skeptic\w*|"
+    r"wants? to|needs? (a|to)|waiting for|validation|reassurance|conversation|message|asked (about|if|whether)|"
+    r"возможно|видимо|похоже|кажется|наверное|хочет узнать|сомнева\w*|интересу\w*)\b|\b(ai|bot|ии|бот\w*)\b", re.I)
+
+
+def grounded(note: str, their_text: str) -> bool:
+    """A note is kept only if it reuses their own words and doesn't read like an interpretation."""
+    if SPECULATION_RE.search(note):
+        return False
+    said = {w[:5] for w in re.findall(r"[^\W\d_]{4,}", their_text.lower())}
+    words = [w[:5] for w in re.findall(r"[^\W\d_]{4,}", note.lower())]
+    return bool(words) and sum(w in said for w in words) >= max(1, len(words) // 2)
 
 
 def facts_block(name: str) -> str:
@@ -125,6 +141,6 @@ async def remember(http: httpx.AsyncClient, chat_id: int, who: str, their_messag
         return []
     added = []
     for line in answer.splitlines()[:3]:
-        if line.strip().startswith(("-", "•")) and add_note(chat_id, line):
+        if line.strip().startswith(("-", "•")) and grounded(line, text) and add_note(chat_id, line):
             added.append(line.strip().lstrip("-• ").strip())
     return added

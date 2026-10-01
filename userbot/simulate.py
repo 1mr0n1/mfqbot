@@ -151,6 +151,7 @@ async def run_scenario(fake: FakeClient, contacts: dict, sc: dict) -> dict:
             _emit_sink.reset(token)
         sent = fake.sent.get(chat_id, [])[before:]
         turns.append({"them": incoming, "bot": sent, "notes": [t for k, t in captured if k == "note"],
+                      **({"reference": sc["reference"]} if sc.get("reference") else {}),
                       "why": [t for k, t in captured if k in ("warning", "decision") and not t.startswith(("Typing", "Done", "Read the chat", "Model used"))],
                       "seconds": round(time.monotonic() - started, 1)})
     return {"id": sc["id"], "who": sc["who"], "tag": sc.get("tag", ""), "turns": turns}
@@ -178,6 +179,7 @@ async def main():
     out_path = Path(args[1]) if len(args) > 1 else None
     scenarios = [s for s in data["scenarios"] if not only or s["id"] in only]
 
+    U.HOLDOUT.update(U.holdout_key(t) for t in data.get("holdout", []))  # never show the answer key as an example
     fake = FakeClient()
     U.client = fake
     U.me = User(id=1, first_name=data.get("me", {}).get("first_name", "Me"), last_name=data.get("me", {}).get("last_name"))
@@ -188,6 +190,26 @@ async def main():
     async def _no_dashboard(draft_id):
         return {}
     trace.draft_state = _no_dashboard
+
+    # Throttle model calls so a long run doesn't trip the provider's rate limit (and starve the live bot).
+    per_minute = float(os.environ.get("SIM_RPM", "30"))
+    real_post, gate, last_call = U.http.post, asyncio.Lock(), [0.0]
+
+    async def paced_post(*a, **kw):
+        for attempt in range(8):
+            async with gate:
+                wait = last_call[0] + 60 / per_minute - time.monotonic()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                last_call[0] = time.monotonic()
+            resp = await real_post(*a, **kw)
+            if resp.status_code != 503:  # 503 = every listed model is busy / rate-limited: wait it out, don't give up
+                return resp
+            async with gate:
+                await asyncio.sleep(30)
+                last_call[0] = time.monotonic()
+        return resp
+    U.http.post = paced_post
 
     sem = asyncio.Semaphore(int(os.environ.get("SIM_PARALLEL", "3")))
 
@@ -203,6 +225,8 @@ async def main():
         print(f"#{r['id']:<3} [{r['who']}/{r['tag']}]" + (f"  CRASH {r['crash']}" if r.get("crash") else ""))
         for t in r["turns"]:
             print(f"     THEM: {' ⏎ '.join(t['them'])}")
+            if t.get("reference"):
+                print(f"     REAL: {t['reference'].replace(chr(10), ' ⏎ ')}")
             print(f"     BOT : {' ⏎ '.join(t['bot']) if t['bot'] else '(nothing sent)'}" + (f"   ⟨{'; '.join(t['why'])[:150]}⟩" if t["why"] else ""))
             for n in t["notes"]:
                 print(f"     NOTE TO YOU: {n[:160]}")
