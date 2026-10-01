@@ -17,6 +17,11 @@ LEADING_GREETING_RE = re.compile(r"^\s*((?i:здравствуйте|приве�
 
 def fix_greeting(reply: str, their_text: str, formal: bool) -> str:
     """No greeting unless they greeted; never "Здравствуйте" to someone who writes casually."""
+    salam_start = re.match(r"^\s*(в?а\s+)?(ас+ал[ао]м\w*|assalom\w*|salom)\s+(ал[ае]йкум|alaykum)?[\s,!.]*", reply, re.I)
+    if salam_start and salam_start.group(0).strip() and not re.search(r"ас+ал[ао]м|assalom|salom|салом|салам", their_text, re.I):
+        rest = reply[salam_start.end():].strip()
+        if rest:
+            return rest[0].upper() + rest[1:]
     match = LEADING_GREETING_RE.match(reply)
     if not match:
         return reply

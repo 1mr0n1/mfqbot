@@ -252,7 +252,7 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
 # ---------- things the account must not decide or claim on its own ----------
 PLAN_RE = re.compile(
     r"\bго\b|пойд[её]шь|ид[её]шь|прид[её]шь|зайд[её]шь|приедешь|встрет\w*|давай\s+(в|на|завтра|сегодня|после)|поможешь|принес\w*|"
-    r"отдашь|ждём|ждем|выходи|подойд[её]шь|во\s+сколько|"
+    r"отдашь|ждём|ждем|выходи|подойд[её]шь|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
     r"\b(wanna|coming|come\s+(over|to)|meet|bring|let'?s)\b|kelasan\w*|borasan\w*|chiqasan\w*|uchrash\w*|olib\s+kel", re.I)
 COMMIT_RE = re.compile(
     r"\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|"

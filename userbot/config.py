@@ -36,7 +36,7 @@ ONLINE_LINGER = (15, 60)         # seconds to stay "online" after doing somethin
 
 # Small human touches (see quirks.py)
 TEMPERATURE = float(os.environ.get("USERBOT_TEMPERATURE", "0.5"))  # lower = steadier wording, fewer made-up words
-EXTRA_REACTION_CHANCE = float(os.environ.get("USERBOT_REACTION_CHANCE", "0.12"))  # also react to a message you answer
+EXTRA_REACTION_CHANCE = float(os.environ.get("USERBOT_REACTION_CHANCE", "0.3"))  # also react to a message you answer
 EMOJI_KEEP_CHANCE = float(os.environ.get("USERBOT_EMOJI_CHANCE", "0.04"))  # share of replies allowed to keep ONE emoji
 TYPO_CHANCE = float(os.environ.get("USERBOT_TYPO_CHANCE", "0.06"))  # share of messages sent with a typo, then fixed
 QUOTE_IF_OLDER_THAN = 3600       # answering something this old (seconds): quote it
@@ -89,7 +89,7 @@ DRAFT_HOLD = (2, 3)            # legacy fixed hold; real timing now comes from r
 TYPING_CHARS_PER_SEC = (5, 9)  # typing speed while the "typing…" indicator is shown
 TYPING_LIMITS = (1.5, 20)      # min/max typing time per message
 BETWEEN_MESSAGES = (0.8, 3)    # pause between split messages
-MAX_PARTS = 3                  # max messages a reply is split into
+MAX_PARTS = 2                  # max messages a reply is split into (anything beyond is dropped)
 GENERATE_RETRIES = 3           # if every model fails, try again later this many times
 RETRY_DELAY = (45, 90)         # wait between those attempts
 

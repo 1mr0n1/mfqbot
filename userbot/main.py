@@ -153,14 +153,17 @@ MAX_REPLY_CHARS = 700
 
 
 def looks_safe(reply: str) -> bool:
-    return len(reply) <= MAX_REPLY_CHARS and not LEAK_RE.search(reply)
+    return len(reply) <= MAX_REPLY_CHARS and not LEAK_RE.search(reply) and not re.search(r"@[A-Za-z]\w{3,}", reply)
 
 
 # Lines that make it sound like a customer-support bot get dropped.
 ASSISTANT_RE = re.compile(
     r"\b(assist|let me know if you need|anything else|how can i help|feel free|happy to help)\b"
     r"|чем\s+(я\s+)?(могу|можно)\s+помочь|обращай(ся|тесь)|если\s+что[-\s]*то\s+нужно|буду\s+ждать,?\s+когда\s+появится"
-    r"|yordam\s+bera\s+ola|qanday\s+yordam|доступ\s+к\s+просмотру", re.I)
+    r"|yordam\s+bera\s+ola|qanday\s+yordam|доступ\s+к\s+просмотру"
+    r"|спасибо\s+за\s+(рассказ|совет|напоминание|информаци\w+|понимание|вопрос|ответ|помощь\s+в|то,?\s+что)"
+    r"|thanks?\s+for\s+(sharing|letting\s+me\s+know|the\s+(info|reminder|advice|update))|рад\s+(был\s+)?помочь|"
+    r"хорошего\s+(дня|вечера)|have\s+a\s+(nice|great|good)\s+(day|night|one)", re.I)
 
 # Questions about who or what is answering ("are you a bot?", "who are you?", "is this really you?") are ignored:
 # no confirmation, no denial. Lines where the model claims to be human are dropped, so ignoring never becomes lying.
@@ -213,6 +216,7 @@ def identity_question(history) -> str | None:
     return "mixed" if rest_words >= 3 else "only"
 
 
+HTML_TAG_RE = re.compile(r"</?[a-zA-Z][^>]{0,40}>|\*\*|__|`")  # leftover markup: <b>, </blockquote>, **bold**
 FAKE_TAG_RE = re.compile(r"\[(?!(?:sticker|gif|voice|video)\s)[^\]]*\]", re.I)  # e.g. echoed "[photo]"
 REPEAT_RE = re.compile(r"(.)\1{12,}")  # "YOOOOOOOOOOOOOO…" -> capped
 
@@ -238,7 +242,7 @@ def clean_reply(reply: str) -> str:
     for line in reply.splitlines():
         if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line) or REFUSAL_RE.search(line):
             continue
-        line = FAKE_TAG_RE.sub("", line)
+        line = FAKE_TAG_RE.sub("", HTML_TAG_RE.sub("", line))
         if first:  # drop a "Name:" speaker label
             line = re.sub(rf"^\s*{re.escape(first)}\s*:\s*", "", line, flags=re.I)
         line = REPEAT_RE.sub(lambda m: m.group(1) * 8, line).strip()
@@ -252,15 +256,18 @@ MEDIA_SPLIT_RE = re.compile(r"(\[(?:sticker|gif|voice|video)\s+[^\]]+\])", re.I)
 
 
 def split_reply(reply: str) -> list[str]:
-    # one part per line, and media tags always become their own part
+    """One part per line (media tags on their own). Text beyond MAX_PARTS messages is dropped, not glued together:
+    when the model emits a pile of short lines it is imitating bursts badly, and only the start makes sense."""
     parts = [p.strip() for line in reply.splitlines() for p in MEDIA_SPLIT_RE.split(line) if p.strip()]
-    if len(parts) > C.MAX_PARTS:
-        # merge overflow text into one message, but never glue a media tag to text (keep one media item)
-        rest = parts[C.MAX_PARTS - 1:]
-        rest_text = [p for p in rest if not media.MEDIA_LINE_RE.match(p)]
-        rest_media = [p for p in rest if media.MEDIA_LINE_RE.match(p)]
-        parts = parts[:C.MAX_PARTS - 1] + (["\n".join(rest_text)] if rest_text else []) + rest_media[:1]
-    return parts
+    kept, texts = [], 0
+    for p in parts:
+        if media.MEDIA_LINE_RE.match(p):
+            if not any(media.MEDIA_LINE_RE.match(k) for k in kept):
+                kept.append(p)  # at most one media item
+        elif texts < C.MAX_PARTS:
+            kept.append(p)
+            texts += 1
+    return kept
 
 
 HOLDOUT: set[str] = set()  # replies hidden from the examples (the simulator's answer key); empty in production
@@ -461,6 +468,11 @@ async def generate(history, contact: User, extra: str = "") -> str | None:
 # formal Russian, the way a teacher or an official writes (family members have their own style files)
 TEACHER_RE = re.compile(r"здравствуйте|\bвы\b|\bвас\b|\bвам\b|\bваш\w*|\b(зайдите|подойдите|передайте|принесите|сдайте|"
                         r"напишите|ответьте|сообщите)\b", re.I)
+
+
+# what people actually tap a reaction on: laughs, good news, congratulations, compliments, emoji-heavy messages
+REACTABLE_RE = re.compile(r"аха|хаха|лол|\blol\b|lmao|ура|поздрав|молодец|красав|круто|класс|супер|выиграл|получил|сдал|"
+                          r"\b(nice|congrats|won|yay|let'?s go)\b|zo'?r|tabrik|[\U0001F600-\U0001F64F\U0001F389\U0001F525\u2764]", re.I)
 
 
 def spawn(coro):
@@ -869,9 +881,11 @@ async def reply_flow(chat_id: int, contact: User):
         rhythm.online_for_a_bit(client)
         if sent_count:
             daylog.record("replied", who, " / ".join(parts), them=their_text[:200])
-        if sent_count and from_model and not formal and random.random() < C.EXTRA_REACTION_CHANCE:
-            target = next((m for m in history if not m.out), None)
-            if target:  # people also just tap a reaction on the message they answered
+        target = next((m for m in history if not m.out), None)
+        worth_it = bool(target) and "?" not in (target.raw_text or "") and (
+            getattr(target, "photo", None) or REACTABLE_RE.search(target.raw_text or ""))
+        if sent_count and from_model and not formal and worth_it and random.random() < C.EXTRA_REACTION_CHANCE:
+            if target:  # people also just tap a reaction on a photo, a joke, good news
                 emoji = "❤" if getattr(target, "photo", None) or random.random() < 0.3 else "👍"
                 try:
                     await client(functions.messages.SendReactionRequest(peer=chat_id, msg_id=target.id,
