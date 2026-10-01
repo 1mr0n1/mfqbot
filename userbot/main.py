@@ -14,6 +14,8 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai name <first name> / .ai surname <last name or -> / .ai bio <text or -> / .ai profile
   .ai photo          — reply to a photo with this to make it your profile photo
   .ai pfp undo       — anywhere: remove the newest profile photo (e.g. one someone asked the bot to set)
+  .ai note <text>    — in a private chat: remember something about that person
+  .ai notes / .ai forgetnotes — in a private chat: show / erase what is remembered about that person
 """
 import asyncio
 from collections import Counter
@@ -28,10 +30,10 @@ from datetime import datetime
 
 import httpx
 from telethon import TelegramClient, errors, events, functions
-from telethon.tl.types import User
+from telethon.tl.types import ReactionEmoji, User
 
 from . import config as C
-from . import lang, media, pfp, salam
+from . import judge, lang, media, memory, pfp, salam
 from . import trace
 from .autoprofile import bio_loop
 from .state import State
@@ -51,6 +53,9 @@ pending: dict[int, asyncio.Task] = {}   # chat_id -> reply in progress
 our_texts: dict[int, list[str]] = {}    # texts we're about to send, to recognize our own outgoing events
 our_ids: set[int] = set()               # message ids sent by the userbot (vs. typed by you)
 names: dict[int, str] = {}              # chat_id -> person's name, for logs
+handled: dict[int, int] = {}            # chat_id -> newest incoming message id already dealt with
+handoff_until: dict[int, float] = {}    # chat_id -> time until which the chat is left to you
+background_tasks: set[asyncio.Task] = set()
 me: User | None = None
 
 
@@ -333,6 +338,9 @@ async def generate(history, contact: User, extra: str = "") -> str | None:
         system += media.media_block(full_name(me))
     if photos:
         system += PHOTO_HINT
+    system += memory.facts_block(full_name(me)) + memory.notes_block(contact.id, full_name(contact))
+    if C.SMART_SKIP and judge.may_skip(history):
+        system += judge.NO_REPLY_HINT
     system += extra  # what just happened outside the conversation (e.g. a profile photo change)
     try:
         resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS,
@@ -348,6 +356,43 @@ async def generate(history, contact: User, extra: str = "") -> str | None:
     trace.emit("decision", full_name(contact),
                f"Model used: {data['model']}" + (f" — looked at {photos} photo(s)" if photos else ""))
     return data["reply"]
+
+
+def spawn(coro):
+    task = asyncio.create_task(coro)
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+
+
+async def remember_later(chat_id: int, who: str, their_messages: list[str]):
+    try:
+        for note in await memory.remember(http, chat_id, who, their_messages):
+            log.info("%s: remembered %r", who, note)
+            trace.emit("decision", who, f"Noted for later: {note}")
+    except Exception:
+        log.exception("%s: remembering failed", who)
+
+
+async def no_text_reply(chat_id: int, who: str, action: str, history):
+    """An acknowledgement doesn't need words: leave it, or put a reaction on their message."""
+    if action == "skip":
+        log.info("%s: no reply needed", who)
+        trace.emit("decision", who, "Their message doesn't need a reply — leaving it")
+        return
+    emoji = action.split(":", 1)[1]
+    target = next((m for m in history if not m.out), None)
+    if not target:
+        return
+    await asyncio.sleep(rand(C.DRAFT_HOLD))
+    try:
+        await client(functions.messages.SendReactionRequest(peer=chat_id, msg_id=target.id,
+                                                            reaction=[ReactionEmoji(emoticon=emoji)]))
+    except errors.RPCError as e:
+        log.info("%s: reaction not possible (%s)", who, e.__class__.__name__)
+        trace.emit("decision", who, "No reply needed (a reaction wasn't possible here) — leaving it")
+        return
+    log.info("%s: reacted %s", who, emoji)
+    trace.emit("sent", who, f"[reaction {emoji}] instead of a text reply")
 
 
 async def reply_flow(chat_id: int, contact: User):
@@ -368,6 +413,20 @@ async def reply_flow(chat_id: int, contact: User):
             log.info("%s: you're active here, holding off %.0fs", who, wait)
             trace.emit("decision", who, f"You wrote in this chat recently — holding off {wait:.0f}s so I don't interrupt")
             await asyncio.sleep(wait + rand(C.READ_DELAY))
+        if history:
+            handled[chat_id] = history[0].id
+        reason = await judge.sensitive_reason(http, full_name(me), history) if C.HANDOFF else None
+        if reason:  # this one is yours: don't answer, don't even mark it read
+            handoff_until[chat_id] = time.time() + C.HANDOFF_HOLD
+            snippet = " / ".join(m.raw_text for m in reversed(list(itertools.takewhile(lambda m: not m.out, history)))
+                                 if m.raw_text)[:300]
+            log.info("%s: handed to owner (%s)", who, reason)
+            trace.emit("warning", who, f"Leaving this one to you ({reason}) — not replying, staying out for "
+                                       f"{C.HANDOFF_HOLD // 60} min or until you answer")
+            await client.send_message("me", f"🚨 {who} needs YOU — {reason}.\n“{snippet}”\n"
+                                            f"I'm not replying and I'll stay out of that chat for "
+                                            f"{C.HANDOFF_HOLD // 60} min (or until you write there).")
+            return
         await client.send_read_acknowledge(chat_id)
         await asyncio.sleep(rand(C.THINK_DELAY))
 
@@ -403,6 +462,12 @@ async def reply_flow(chat_id: int, contact: User):
             if not greeting.rest:
                 return
 
+        action = (judge.closer_action(history)
+                  if C.SMART_SKIP and not greeting.reply and not greeting.sticker and not photo_msg else None)
+        if action:
+            await no_text_reply(chat_id, who, action, history)
+            return
+
         if greeting.reply and not greeting.rest:
             reply = greeting.reply  # fixed text, never written by the model
             trace.emit("decision", who, "They wrote the salam greeting → sending the fixed proper answer (model not used)")
@@ -427,6 +492,11 @@ async def reply_flow(chat_id: int, contact: User):
             else:
                 log.warning("%s: giving up, no model answered", who)
                 trace.emit("warning", who, "Giving up — no model answered")
+            action = (judge.parse_model_choice(reply or "")
+                      if C.SMART_SKIP and not greeting.reply and judge.may_skip(history) else None)
+            if action:  # the model decided this needs no text
+                await no_text_reply(chat_id, who, action, history)
+                return
             reply = clean_reply(reply or "")
             if greeting.reply:  # salam + something else: fixed greeting first, then the model's answer
                 reply = (greeting.reply + "\n" + salam.strip_greeting_line(reply)).strip()
@@ -493,6 +563,9 @@ async def reply_flow(chat_id: int, contact: User):
             sent_count += 1
             trace.emit("sent", who, part, draft_id=draft_id, index=i)
         trace.emit("decision", who, f"Done — {sent_count} message(s) sent", draft_id=draft_id, final=True)
+        if C.REMEMBER:
+            theirs = [m.raw_text for m in itertools.takewhile(lambda m: not m.out, history) if m.raw_text]
+            spawn(remember_later(chat_id, who, theirs[::-1]))
         log.info("%s: replied (%d chars)", who, len(reply))
     except asyncio.CancelledError:
         log.info("%s: reply cancelled", who)
@@ -510,8 +583,8 @@ async def reply_flow(chat_id: int, contact: User):
 @client.on(events.NewMessage(outgoing=True, pattern=r"^\.ai(?:\s+(\w+))?(?:\s+([\w-]+))?\s*$"))
 async def on_command(event):
     arg = (event.pattern_match.group(1) or "status").lower()
-    if arg in PROFILE_COMMANDS:
-        return  # handled by on_profile_command
+    if arg in PROFILE_COMMANDS or arg == "note":
+        return  # handled by on_profile_command / on_note_command
     tag = (event.pattern_match.group(2) or "").lower()
     chat_id = event.chat_id
     in_saved = chat_id == me.id
@@ -520,6 +593,17 @@ async def on_command(event):
 
     if arg in ("save", "forget", "clips"):
         await client.send_message("me", clip_command(arg, tag, replied, in_saved))
+        return
+    if arg in ("notes", "forgetnotes"):
+        if in_saved or not event.is_private:
+            note = f"⚠️ use .ai {arg} inside the private chat with that person"
+        elif arg == "notes":
+            items = memory.notes(chat_id)
+            note = (f"🧠 notes about {await resolve_name(chat_id)}:\n" + "\n".join(f"- {n['text']} ({n['date']})" for n in items)
+                    if items else f"🧠 nothing remembered about {await resolve_name(chat_id)} yet")
+        else:
+            note = f"🗑 erased {memory.clear_notes(chat_id)} note(s) about {await resolve_name(chat_id)}"
+        await client.send_message("me", note)
         return
     if arg == "pfp":
         if tag != "undo":
@@ -581,6 +665,18 @@ async def on_command(event):
 
 
 PROFILE_COMMANDS = {"name", "surname", "bio", "photo", "profile"}
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+note\s+(.+)$"))
+async def on_note_command(event):
+    """`.ai note <text>` in a private chat: remember something about that person."""
+    text, chat_id = event.pattern_match.group(1).strip(), event.chat_id
+    await event.delete()
+    if chat_id == me.id or not event.is_private:
+        await client.send_message("me", "⚠️ use .ai note <text> inside the private chat with that person")
+        return
+    memory.add_note(chat_id, text, source="you")
+    await client.send_message("me", f"🧠 noted about {await resolve_name(chat_id)}: {text}")
 
 
 @client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+(name|surname|bio|photo|profile)\b\s*(.*)$"))
@@ -654,6 +750,7 @@ async def on_outgoing(event):
     if texts and event.raw_text in texts:
         texts.remove(event.raw_text)
         return
+    handoff_until.pop(event.chat_id, None)  # you answered there yourself; normal rules apply again
     if event.chat_id in pending:
         log.info("%s: you replied yourself, standing down", label(event.chat_id))
         cancel(event.chat_id)
@@ -671,6 +768,9 @@ async def on_incoming(event):
     if not state.is_active(event.chat_id, C.REPLY_MODE):
         trace.emit("decision", who, "Not replying — auto-replies are paused" if state.is_paused()
                    else "Not replying — auto-replies are off for this chat")
+        return
+    if time.time() < handoff_until.get(event.chat_id, 0):
+        trace.emit("decision", who, "Still leaving this chat to you (handed off earlier)")
         return
     cancel(event.chat_id)  # a new message restarts the wait, so bursts get one reply
     pending[event.chat_id] = asyncio.create_task(reply_flow(event.chat_id, sender))
@@ -698,6 +798,8 @@ async def reply_to_unread(limit: int = 0) -> int:
             continue
         if not last or last.out or dialog.id in pending or not state.is_active(dialog.id, C.REPLY_MODE):
             continue
+        if handled.get(dialog.id) == last.id or time.time() < handoff_until.get(dialog.id, 0):
+            continue  # already answered, skipped, reacted to, or handed to you
         age = time.time() - last.date.timestamp()
         if not ((dialog.unread_count and age < C.UNREAD_MAX_AGE) or age < C.IGNORE_OLDER_THAN):
             continue

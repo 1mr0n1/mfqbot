@@ -92,6 +92,19 @@ style (no chat content is used, so nothing private leaks); each change is noted 
 Name, surname and photo are only changed by you (`.ai …` commands or `python -m userbot.profile`).
 `USERBOT_REPLY_MODE=all` replies in every private chat instead of only enabled ones.
 
+### What it knows, and when it stays out
+
+- **Facts about you** — copy `userbot/facts.example.md` to `userbot/facts.md` and fill it in (school, routine,
+  family, interests). The account answers from it and stays vague about anything not listed.
+- **Notes per person** — after a reply, lasting things the *other person* said (a move, a birthday, a request)
+  are saved under `userbot/memory/` and used in later chats. `.ai note <text>`, `.ai notes`, `.ai forgetnotes`
+  inside that person's chat. Notes are never taken from the bot's own messages.
+- **Not everything gets a reply** — an "ok" / "👍" / "спасибо" after your message is left alone or gets an emoji
+  reaction instead of text (`USERBOT_SMART_SKIP`).
+- **Hand-off** — money, verification codes/passwords, emergencies, or someone upset / wanting a serious talk are
+  not answered: the message stays unread, you get a 🚨 note in Saved Messages, and the account stays out of
+  that chat for 30 minutes or until you write there (`USERBOT_HANDOFF`).
+
 ### Admin dashboard
 
 Open http://127.0.0.1:8000/admin while the backend and userbot run. It shows a live **decision log**

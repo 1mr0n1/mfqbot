@@ -19,6 +19,14 @@ CONTACT_PAIRS = 14          # same, for a person with their own style file (styl
 CLIPS_PATH = HERE / "clips.json"  # tag -> your voice/round-video clip in Saved Messages
 MEDIA_ENABLED = os.environ.get("USERBOT_MEDIA", "true").lower() in ("1", "true", "yes")
 
+# What the account knows (see memory.py) and when it stays out (see judge.py)
+FACTS_PATH = HERE / "facts.md"   # you write this; git-ignored
+MEMORY_DIR = HERE / "memory"     # automatic notes per person; git-ignored
+REMEMBER = os.environ.get("USERBOT_REMEMBER", "true").lower() in ("1", "true", "yes")
+SMART_SKIP = os.environ.get("USERBOT_SMART_SKIP", "true").lower() in ("1", "true", "yes")  # react / stay silent
+HANDOFF = os.environ.get("USERBOT_HANDOFF", "true").lower() in ("1", "true", "yes")        # sensitive -> you
+HANDOFF_HOLD = 30 * 60           # after handing a chat to you, stay out of it this long (or until you write there)
+
 # Profile photo on request: someone sends a photo and asks you to use it as your profile picture (see pfp.py)
 PFP_FROM_CHATS = os.environ.get("USERBOT_PFP_FROM_CHATS", "true").lower() in ("1", "true", "yes")
 PFP_MAX_PER_DAY = 3

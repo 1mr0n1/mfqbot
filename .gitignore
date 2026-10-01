@@ -8,3 +8,5 @@ userbot/state.json
 userbot/style/
 chat-histories/
 userbot/clips.json
+userbot/facts.md
+userbot/memory/
