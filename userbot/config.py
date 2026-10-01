@@ -14,6 +14,8 @@ STATE_PATH = HERE / "state.json"
 PERSONA_PATH = HERE / "persona.md"
 STYLE_DIR = HERE / "style"  # written by learn_style.py (your personal messages — git-ignored)
 STYLE_EXAMPLES = 40         # of your real messages shown to the model per reply
+CLIPS_PATH = HERE / "clips.json"  # tag -> your voice/round-video clip in Saved Messages
+MEDIA_ENABLED = os.environ.get("USERBOT_MEDIA", "true").lower() in ("1", "true", "yes")
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 MODELS = [m.strip() for m in os.environ.get("USERBOT_MODELS", "nemotron,qwen").split(",") if m.strip()]

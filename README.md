@@ -54,7 +54,19 @@ Control it by typing these from your account (the command is deleted, confirmati
 |---|---|---|
 | `.ai on` / `.ai off` | a private chat | enable / disable auto-replies there |
 | `.ai pause` / `.ai resume` | anywhere | stop / restart all auto-replies |
+| `.ai pause 30m` (m/h/d) | anywhere | pause for a while, then resume automatically |
 | `.ai status` | anywhere | show state |
+| `.ai save <tag>` | Saved Messages, as a reply | add your voice / round video message to the clip library |
+| `.ai clips` / `.ai forget <tag>` | anywhere | list / remove clips |
+| `.ai name …` / `.ai surname …` / `.ai bio …` | Saved Messages | change your profile (`-` clears surname/bio) |
+| `.ai photo` | Saved Messages, as a reply to a photo | set it as your profile photo |
+| `.ai profile` | Saved Messages | show current name / surname / bio |
+
+Media: replies can include stickers (your favorites/recents first), GIFs (via @gif) and your own recorded
+voice / round video clips. The model never fakes voice or video — it can only send clips you recorded.
+Profile changes are owner commands only; the AI can't change your profile.
+`USERBOT_REPLY_MODE=all` replies in every private chat (`.ai off` excludes one); `allowlist` only in chats
+enabled with `.ai on`. `USERBOT_HUMAN_PACING=false` replies instantly; `USERBOT_MEDIA=false` disables media.
 
 Safety behaviour: private chats only (no groups/channels/bots/Telegram service messages), stays quiet
 if you wrote in the chat within the last 2 minutes, cancels its reply if you start replying yourself,

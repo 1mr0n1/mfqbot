@@ -3,7 +3,13 @@
 Control it by sending these from your account (they're deleted instantly; confirmations go to Saved Messages):
   .ai on / .ai off   — in a private chat: enable/disable auto-replies there
   .ai pause / resume — anywhere: stop/restart all auto-replies
+  .ai pause 30m      — pause for a while (m/h/d), then resume automatically
   .ai status         — anywhere: show current state
+  .ai save <tag>     — reply to your own voice/round video in Saved Messages to add it to the clip library
+  .ai forget <tag>   — remove a clip;  .ai clips — list clips
+  (Saved Messages only)
+  .ai name <first name> / .ai surname <last name or -> / .ai bio <text or -> / .ai profile
+  .ai photo          — reply to a photo with this to make it your profile photo
 """
 import asyncio
 import json
@@ -14,10 +20,11 @@ import time
 from datetime import datetime
 
 import httpx
-from telethon import TelegramClient, events
+from telethon import TelegramClient, errors, events, functions
 from telethon.tl.types import User
 
 from . import config as C
+from . import media
 from .state import State
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -69,13 +76,17 @@ async def resolve_name(chat_id: int) -> str:
     return names[chat_id]
 
 
-def describe(msg) -> str:
+def describe(msg) -> str:  # noqa: C901
     text = msg.raw_text or ""
     if msg.sticker:
         media = f"[sticker {getattr(msg.file, 'emoji', '') or ''}]".replace(" ]", "]")
     elif msg.voice:
         media = "[voice message]"
-    elif msg.video_note or msg.video or msg.gif:
+    elif msg.video_note:
+        media = "[round video message]"
+    elif msg.gif:
+        media = "[gif]"
+    elif msg.video:
         media = "[video]"
     elif msg.photo:
         media = "[photo]"
@@ -148,14 +159,37 @@ def asks_if_bot(history) -> bool:
     return False
 
 
+FAKE_TAG_RE = re.compile(r"\[(?!(?:sticker|gif|voice|video)\s)[^\]]*\]", re.I)  # e.g. echoed "[photo]"
+REPEAT_RE = re.compile(r"(.)\1{12,}")  # "YOOOOOOOOOOOOOO…" -> capped
+
+
 def clean_reply(reply: str) -> str:
-    return "\n".join(line for line in reply.splitlines() if not ASSISTANT_RE.search(line)).strip()
+    first = (me.first_name or "").strip() if me else ""
+    lines = []
+    for line in reply.splitlines():
+        if ASSISTANT_RE.search(line):
+            continue
+        line = FAKE_TAG_RE.sub("", line)
+        if first:  # drop a "Imron:" speaker label
+            line = re.sub(rf"^\s*{re.escape(first)}\s*:\s*", "", line, flags=re.I)
+        line = REPEAT_RE.sub(lambda m: m.group(1) * 8, line).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+MEDIA_SPLIT_RE = re.compile(r"(\[(?:sticker|gif|voice|video)\s+[^\]]+\])", re.I)
 
 
 def split_reply(reply: str) -> list[str]:
-    parts = [p.strip() for p in reply.splitlines() if p.strip()]
+    # one part per line, and media tags always become their own part
+    parts = [p.strip() for line in reply.splitlines() for p in MEDIA_SPLIT_RE.split(line) if p.strip()]
     if len(parts) > C.MAX_PARTS:
-        parts = parts[:C.MAX_PARTS - 1] + ["\n".join(parts[C.MAX_PARTS - 1:])]
+        # merge overflow text into one message, but never glue a media tag to text (keep one media item)
+        rest = parts[C.MAX_PARTS - 1:]
+        rest_text = [p for p in rest if not media.MEDIA_LINE_RE.match(p)]
+        rest_media = [p for p in rest if media.MEDIA_LINE_RE.match(p)]
+        parts = parts[:C.MAX_PARTS - 1] + (["\n".join(rest_text)] if rest_text else []) + rest_media[:1]
     return parts
 
 
@@ -179,9 +213,10 @@ async def generate(history, contact: User) -> str | None:
     if not messages or messages[-1]["role"] != "user":
         return ""  # nothing to answer (None means the backend failed)
     system = persona.format(name=full_name(me), contact=full_name(contact), style=style_block(),
-                            now=datetime.now().strftime("%A %d %B %Y, %H:%M"))
+                            now=datetime.now().strftime("%A %d %B %Y, %H:%M")) + media.media_block(full_name(me))
     try:
-        resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS})
+        resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS,
+                                                  "max_tokens": 300})
     except httpx.HTTPError as e:
         log.warning("Backend unreachable: %r", e)
         return None
@@ -233,17 +268,41 @@ async def reply_flow(chat_id: int, contact: User):
         if not reply:
             return
         if not looks_safe(reply):
-            log.warning("%s: blocked suspicious reply (%d chars): %r", label(chat_id), len(reply), reply[:200])
-            return
+            log.warning("%s: blocked suspicious reply (%d chars): %r — retrying once",
+                        label(chat_id), len(reply), reply[:200])
+            reply = clean_reply(await generate(history, contact) or "")
+            if not reply or not looks_safe(reply):
+                log.warning("%s: second reply also unusable, staying quiet", label(chat_id))
+                return
         elapsed = time.monotonic() - started  # typing was already shown while generating
 
         for i, part in enumerate(split_reply(reply)):
             if i:
                 await asyncio.sleep(rand(C.BETWEEN_MESSAGES))
-            async with client.action(chat_id, "typing"):
-                await asyncio.sleep(max(typing_time(part) - (elapsed if i == 0 else 0), C.TYPING_LIMITS[0]))
-            our_texts.setdefault(chat_id, []).append(part)
-            sent = await client.send_message(chat_id, part)
+            media_line = media.MEDIA_LINE_RE.match(part)
+            if media_line:
+                if not C.MEDIA_ENABLED:
+                    continue
+                kind, arg = media_line.groups()
+                action = {"voice": "record-audio", "video": "record-round"}.get(kind.lower(), "typing")
+                if C.TYPING_LIMITS[1]:  # human pacing: "record" / "choose" for a moment
+                    async with client.action(chat_id, action):
+                        await asyncio.sleep(rand((2, 5)))
+                our_texts.setdefault(chat_id, []).append("")  # media has no text; recognize our own send
+                try:
+                    sent = await media.send_media_line(client, chat_id, kind, arg)
+                except Exception:
+                    log.exception("%s: failed to send %s %r", label(chat_id), kind, arg)
+                    sent = None
+                if not sent:
+                    our_texts[chat_id].remove("")
+                    continue
+                log.info("%s: sent %s %s", label(chat_id), kind, arg)
+            else:
+                async with client.action(chat_id, "typing"):
+                    await asyncio.sleep(max(typing_time(part) - (elapsed if i == 0 else 0), C.TYPING_LIMITS[0]))
+                our_texts.setdefault(chat_id, []).append(part)
+                sent = await client.send_message(chat_id, part)
             our_ids.add(sent.id)
             state.record_sent(chat_id, sent.id)
         log.info("%s: replied (%d chars)", label(chat_id), len(reply))
@@ -257,12 +316,20 @@ async def reply_flow(chat_id: int, contact: User):
             pending.pop(chat_id)
 
 
-@client.on(events.NewMessage(outgoing=True, pattern=r"^\.ai(?:\s+(\w+))?\s*$"))
+@client.on(events.NewMessage(outgoing=True, pattern=r"^\.ai(?:\s+(\w+))?(?:\s+([\w-]+))?\s*$"))
 async def on_command(event):
     arg = (event.pattern_match.group(1) or "status").lower()
+    if arg in PROFILE_COMMANDS:
+        return  # handled by on_profile_command
+    tag = (event.pattern_match.group(2) or "").lower()
     chat_id = event.chat_id
     in_saved = chat_id == me.id
+    replied = await event.get_reply_message() if event.is_reply else None
     await event.delete()
+
+    if arg in ("save", "forget", "clips"):
+        await client.send_message("me", clip_command(arg, tag, replied, in_saved))
+        return
 
     if arg in ("on", "off") and (in_saved or not event.is_private):
         note = "⚠️ .ai on/off only works inside a private chat"
@@ -274,16 +341,23 @@ async def on_command(event):
         cancel(chat_id)
         note = "⛔ auto-replies OFF for {chat}"
     elif arg == "pause":
-        state.set_paused(True)
+        duration = re.fullmatch(r"(\d+)([mhd])", tag)
+        seconds = int(duration.group(1)) * {"m": 60, "h": 3600, "d": 86400}[duration.group(2)] if duration else 0
+        state.set_paused(True, seconds)
         for cid in list(pending):
             cancel(cid)
-        note = "⏸ all auto-replies paused"
+        note = (f"⏸ auto-replies paused for {tag} (until {datetime.fromtimestamp(state.paused_until):%H:%M %d.%m})"
+                if seconds else "⏸ all auto-replies paused until .ai resume")
     elif arg == "resume":
         state.set_paused(False)
         note = "▶️ auto-replies resumed"
     else:
         enabled = ", ".join([await resolve_name(cid) for cid in sorted(state.enabled)]) or "none"
-        note = (f"🤖 mode: {C.REPLY_MODE} | paused: {state.paused} | enabled chats: {enabled}"
+        paused = ("yes" if state.paused else f"until {datetime.fromtimestamp(state.paused_until):%H:%M %d.%m}"
+                  if state.is_paused() else "no")
+        disabled = ", ".join([await resolve_name(cid) for cid in sorted(state.disabled)]) or "none"
+        note = (f"🤖 mode: {C.REPLY_MODE} | paused: {paused} | "
+                + (f"off in: {disabled}" if C.REPLY_MODE == "all" else f"enabled chats: {enabled}")
                 + ("" if in_saved else " | this chat: {active}"))
 
     if "{chat}" in note or "{active}" in note:
@@ -291,6 +365,72 @@ async def on_command(event):
         note = note.format(chat=full_name(chat) if isinstance(chat, User) else chat_id,
                            active="active" if state.is_active(chat_id, C.REPLY_MODE) else "inactive")
     await client.send_message("me", note)
+
+
+PROFILE_COMMANDS = {"name", "surname", "bio", "photo", "profile"}
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+(name|surname|bio|photo|profile)\b\s*(.*)$"))
+async def on_profile_command(event):
+    """Profile changes are owner-only commands — the AI itself can never change your profile."""
+    global me
+    cmd, value = event.pattern_match.group(1).lower(), event.pattern_match.group(2).strip()
+    replied = await event.get_reply_message() if event.is_reply else None
+    in_saved = event.chat_id == me.id
+    await event.delete()
+    if not in_saved:
+        await client.send_message("me", "⚠️ profile commands only work here in Saved Messages")
+        return
+    try:
+        note = await profile_command(cmd, value, replied)
+    except errors.RPCError as e:
+        note = f"⚠️ Telegram refused: {e.__class__.__name__}"
+    me = await client.get_me()  # the persona uses your current name
+    await client.send_message("me", note)
+
+
+async def profile_command(cmd: str, value: str, replied) -> str:
+    clear = value == "-"
+    if cmd == "profile":
+        full = await client(functions.users.GetFullUserRequest("me"))
+        return (f"👤 name: {me.first_name or ''}\nsurname: {me.last_name or '—'}\n"
+                f"bio: {full.full_user.about or '—'}")
+    if cmd == "photo":
+        if not replied or not replied.photo:
+            return "⚠️ reply to a photo with .ai photo"
+        data = await replied.download_media(file=bytes)
+        await client(functions.photos.UploadProfilePhotoRequest(
+            file=await client.upload_file(data, file_name="profile.jpg")))
+        return "🖼 profile photo updated"
+    if not value:
+        return f"⚠️ usage: .ai {cmd} <text>" + ("" if cmd == "name" else "  (or - to clear)")
+    if cmd == "name":
+        await client(functions.account.UpdateProfileRequest(first_name=value[:64]))
+        return f"✅ name → {value[:64]}"
+    if cmd == "surname":
+        await client(functions.account.UpdateProfileRequest(last_name="" if clear else value[:64]))
+        return "✅ surname cleared" if clear else f"✅ surname → {value[:64]}"
+    try:  # bio
+        await client(functions.account.UpdateProfileRequest(about="" if clear else value))
+    except errors.AboutTooLongError:
+        return "⚠️ bio too long (70 characters max, 140 with Premium)"
+    return "✅ bio cleared" if clear else f"✅ bio → {value}"
+
+
+def clip_command(arg: str, tag: str, replied, in_saved: bool) -> str:
+    if arg == "clips":
+        clips = media.load_clips()
+        if not clips:
+            return "🎙 no clips yet — record a voice/round video here and reply to it with .ai save <tag>"
+        return "🎙 clips:\n" + "\n".join(f"{c['kind']}: {t}" for t, c in sorted(clips.items()))
+    if not tag:
+        return f"⚠️ usage: .ai {arg} <tag>"
+    if arg == "forget":
+        return f"🗑 removed clip '{tag}'" if media.remove_clip(tag) else f"⚠️ no clip '{tag}'"
+    if not in_saved or not replied:
+        return "⚠️ in Saved Messages, reply to your voice/round video with .ai save <tag>"
+    kind = media.add_clip(tag, replied)
+    return f"✅ saved {kind} clip '{tag}'" if kind else "⚠️ that's not a voice message or round video"
 
 
 @client.on(events.NewMessage(outgoing=True))
@@ -339,10 +479,14 @@ async def main():
     if not await client.is_user_authorized():
         raise SystemExit("Not logged in. Run once: .venv/bin/python -m userbot.login")
     me = await client.get_me()
-    log.info("Running as %s (@%s) | mode=%s | models=%s | paused=%s | enabled chats=%d",
-             full_name(me), me.username, C.REPLY_MODE, C.MODELS, state.paused, len(state.enabled))
-    enabled = [await resolve_name(cid) for cid in sorted(state.enabled)]
-    log.info("Enabled chats: %s", ", ".join(enabled) or "none (type .ai on in a chat)")
+    log.info("Running as %s (@%s) | mode=%s | models=%s | paused=%s",
+             full_name(me), me.username, C.REPLY_MODE, C.MODELS, state.is_paused())
+    if C.REPLY_MODE == "all":
+        off = [await resolve_name(cid) for cid in sorted(state.disabled)]
+        log.info("Replying in every private chat; off in: %s", ", ".join(off) or "none")
+    else:
+        enabled = [await resolve_name(cid) for cid in sorted(state.enabled)]
+        log.info("Enabled chats: %s", ", ".join(enabled) or "none (type .ai on in a chat)")
     await catch_up()
     try:
         await client.run_until_disconnected()

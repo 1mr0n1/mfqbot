@@ -7,3 +7,4 @@ userbot/state.json
 .DS_Store
 userbot/style/
 chat-histories/
+userbot/clips.json
