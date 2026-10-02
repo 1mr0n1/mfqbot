@@ -84,6 +84,35 @@ def closer_action(history) -> str | None:
     return "react:👍"
 
 
+def dry(history) -> bool:
+    """They answer with next to nothing ("ок", "да", "норм", a laugh, a sticker) but haven't said goodbye:
+    the conversation is running out, not ending."""
+    unanswered = list(itertools.takewhile(lambda m: not m.out, history))
+    if not unanswered or len(unanswered) > 3:
+        return False
+    for msg in unanswered:
+        if msg.photo or msg.voice or msg.video or msg.video_note or (msg.document and not msg.sticker):
+            return False
+        if msg.sticker:
+            continue
+        text = (msg.raw_text or "").strip()
+        kind = _closer_kind(text)
+        if "?" in text or kind in ("bye", "thanks"):
+            return False
+        if kind is None and len(re.findall(r"[^\W\d_]+", text)) > 2:
+            return False
+    return True
+
+
+KEEP_GOING_HINT = (
+    "\nThey are answering dryly and the conversation is running out. Don't let it die and don't just acknowledge: "
+    "keep it going the way a friend would. Write ONE short casual line that gives them something to answer — ask how "
+    "their day went, what they are doing right now, what the plans are for today or the weekend, or bring up "
+    "something you know about them or something from earlier in this chat. It is {clock} now, {weekday}: pick what "
+    "fits the time (no \"how was your day\" in the morning). Don't ask anything that was already asked in this chat, "
+    "don't invent news about yourself, no [react …]. This overrides the rule about answering only what was asked.\n")
+
+
 def parse_model_choice(reply: str) -> str | None:
     """The model may answer [react 👍] (e.g. when asked to "like" something) instead of text."""
     match = re.fullmatch(r"\[react\s+(\S+)\]", reply.strip(), re.I)

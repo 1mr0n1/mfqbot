@@ -65,6 +65,7 @@ contacts: dict[int, User] = {}          # chat_id -> the person, for dashboard a
 me: User | None = None
 
 
+revives: dict[int, int] = {}            # chat_id -> how many times in a row you tried to restart a dying chat
 recent_incoming: dict[int, deque] = {}  # chat_id -> their latest messages, to notice a flood
 spam_until: dict[int, float] = {}       # chat_id -> no spamming back before this time
 
@@ -674,9 +675,25 @@ async def reply_flow(chat_id: int, contact: User):
             if not greeting.rest:
                 return
 
+        # Dry answers in a live conversation: come up with a topic instead of a 👍 (a couple of tries, then let it go)
+        is_dry = judge.dry(history)
+        ours = next((m for m in history if m.out), None)
+        keep_going = (C.KEEP_TALKING and is_dry and not force and not greeting.reply and not greeting.sticker
+                      and not photo_msg and identity is None and not quirks.is_formal(history)
+                      and ours is not None and time.time() - ours.date.timestamp() <= C.REVIVE_WINDOW
+                      and revives.get(chat_id, 0) < C.REVIVE_MAX)
+        if not is_dry:
+            revives.pop(chat_id, None)
+        if keep_going:
+            revives[chat_id] = revives.get(chat_id, 0) + 1
+            now = time.localtime()
+            hint += judge.KEEP_GOING_HINT.format(clock=time.strftime("%H:%M", now), weekday=time.strftime("%A", now))
+            trace.emit("decision", who, f"Dry answer — keeping the chat going with a question or a topic "
+                                        f"(try {revives[chat_id]}/{C.REVIVE_MAX})")
+
         action = (judge.closer_action(history)
                   if C.SMART_SKIP and not force and not greeting.reply and not greeting.sticker and not photo_msg
-                  else None)
+                  and not keep_going else None)
         if action and quirks.is_formal(history) and re.search(r"до\s+свидания|всего\s+доброго|xayr", their_text, re.I):
             our_texts.setdefault(chat_id, []).append("До свидания")
             sent = await client.send_message(chat_id, "До свидания")

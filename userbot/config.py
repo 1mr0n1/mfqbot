@@ -126,6 +126,11 @@ UNREAD_RESCAN_SECONDS = 45     # re-check the 30 most recent chats for unread DM
 
 REPEAT_LOOKBACK = 12           # a draft may not repeat a line from this many latest messages of the chat
 
+# Dry answers ("ок", "да", "норм") -> ask about their day / bring up a topic instead of letting the chat die
+KEEP_TALKING = True
+REVIVE_MAX = 2                 # tries in a row; if they stay dry after that, the chat is left alone
+REVIVE_WINDOW = int(os.environ.get("USERBOT_REVIVE_WINDOW", 30 * 60))  # only while the chat is live: your last message is at most this old
+
 # Someone floods the chat -> the same flood goes back at them
 SPAM_BACK = True
 SPAM_TRIGGER = 5               # this many messages from one person...
