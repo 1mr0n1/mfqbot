@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace as NS
 
+os.environ.setdefault("USERBOT_INTRO", "false")  # scripted chats start cold; "who is this?" has its own test
 os.environ.update(USERBOT_HUMAN_PACING="false", USERBOT_RHYTHM="false", USERBOT_TYPO_CHANCE="0", USERBOT_REMEMBER="false")
 
 from telethon.tl.types import User  # noqa: E402

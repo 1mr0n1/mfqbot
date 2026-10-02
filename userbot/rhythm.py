@@ -167,6 +167,11 @@ def typing_plan(text: str) -> list[tuple[float, float]]:
     """-> [(seconds typing, seconds paused after)], so "typing…" can stop and start like a person hesitating."""
     speed = random.uniform(4.5, 10)         # characters per second; differs from message to message
     total = min(max(_vary(len(text) / speed, 0.25), 0.7), 25)
+    if random.random() < 0.06:   # start typing, get distracted, come back to it a bit later
+        return [(random.uniform(1.5, 4), random.uniform(12, 40)), (total, 0)]
+    if len(text) > 40 and random.random() < 0.15:   # two hesitations in a longer message
+        a, b = sorted(random.uniform(0.2, 0.8) for _ in range(2))
+        return [(total * a, random.uniform(1, 3)), (total * (b - a), random.uniform(1.5, 5)), (total * (1 - b), 0)]
     if len(text) > 25 and random.random() < 0.25:   # stop mid-way, think, continue
         first = total * random.uniform(0.3, 0.7)
         return [(first, random.uniform(1, 3.5)), (total - first, 0)]

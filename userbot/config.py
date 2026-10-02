@@ -157,6 +157,18 @@ NUDGE_GIVE_UP = 3 * 3600           # a question older than this is forgotten
 SPLIT_ON = True
 SPLIT_CHANCE = float(os.environ.get("USERBOT_SPLIT_CHANCE", "0.75"))
 
+# People
+INTRO_ON = os.environ.get("USERBOT_INTRO", "true").lower() in ("1", "true", "yes")  # unknown person -> "кто это?"
+ADD_CONTACTS = True            # once they say who they are, save them to your Telegram contacts under that name
+CLOSENESS_ON = True            # family / close friend / acquaintance / stranger each get their own tone
+# Writing first: now and then open a chat yourself — to ask how something went, or just "чё делаешь"
+INITIATE_ON = True
+INITIATE_MAX = 2               # chats opened per day at most
+INITIATE_HOURS = (10, 22)      # only between these hours
+INITIATE_CHANCE = 0.05         # per 10-minute look, when there is nothing specific to ask about
+INITIATE_QUIET = (5 * 3600, 14 * 86400)   # the chat has been silent at least / at most this long
+INITIATE_GAP = 2 * 86400       # not the same person again before this
+
 # Someone floods the chat -> the same flood goes back at them
 SPAM_BACK = True
 SPAM_TRIGGER = 5               # this many messages from one person...

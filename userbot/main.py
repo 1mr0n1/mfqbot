@@ -41,7 +41,7 @@ from telethon.tl.types import ChannelForbidden, ChatForbidden, InputDialogPeer, 
 
 from . import config as C
 from . import daylog, judge, lang, media, memory, pfp, punct, quirks, recall, rhythm, salam, toggles, voice
-from . import pilot, trace
+from . import people, pilot, trace
 from .autoprofile import bio_loop
 from .state import State
 
@@ -250,6 +250,7 @@ def identity_question(history, after_id: int = 0) -> str | None:
 
 
 HTML_TAG_RE = re.compile(r"</?[a-zA-Z][^>]{0,40}>|\*\*|__|`")  # leftover markup: <b>, </blockquote>, **bold**
+PLACEHOLDER_RE = re.compile(r"\[(sticker|gif|voice|video)\s+[^\]]*(search words|emoji|tag|\.\.\.|…|<)[^\]]*\]", re.I)  # the instruction copied back
 FAKE_TAG_RE = re.compile(r"\[(?!(?:sticker|gif|voice|video)\s)[^\]]*\]", re.I)  # e.g. echoed "[photo]"
 REPEAT_RE = re.compile(r"(.)\1{12,}")  # "YOOOOOOOOOOOOOO…" -> capped
 
@@ -277,7 +278,7 @@ def clean_reply(reply: str) -> str:
         line = line.strip().lstrip("/|").strip()
         if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line) or REFUSAL_RE.search(line):
             continue
-        line = FAKE_TAG_RE.sub("", HTML_TAG_RE.sub("", line))
+        line = FAKE_TAG_RE.sub("", HTML_TAG_RE.sub("", PLACEHOLDER_RE.sub("", line)))
         line = re.sub(r"^\s*\d{1,2}[.)]\s+(?=\D)", "", line)  # "1) …" list numbering
         if first:  # drop a "Name:" speaker label
             line = re.sub(rf"^\s*{re.escape(first)}\s*:\s*", "", line, flags=re.I)
@@ -565,6 +566,10 @@ async def remember_later(chat_id: int, who: str, their_messages: list[str]):
             log.info("%s: remembered %r", who, note)
             daylog.record("note", who, note)
             trace.emit("decision", who, f"Noted for later: {note}")
+        upcoming = await people.note_upcoming(http, chat_id, who, "\n".join(their_messages))
+        if upcoming:
+            log.info("%s: will ask about %r after %s", who, upcoming["what"], upcoming["ask_after"])
+            trace.emit("decision", who, f"Will ask how “{upcoming['what']}” went (from {upcoming['ask_after']})")
     except Exception:
         log.exception("%s: remembering failed", who)
 
@@ -637,6 +642,128 @@ def stale_parts(history, parts: list[str]) -> list[str]:
             and len(judge._norm(p).split()) >= 2 and judge._norm(p) in said]
 
 
+async def who_is_this(chat_id: int, contact: User, who: str, history, their_text: str) -> str:
+    """Someone you don't know writes: find out who it is. -> a hint for the reply ("ask who this is"), or "".
+    Once they say it, they get a folder (people.py) and are saved to your Telegram contacts under that name."""
+    if not C.INTRO_ON or contact.contact or contact_style_path(contact) or chat_id in commander_ids:
+        return ""
+    prof = people.profile(chat_id)
+    if prof.get("who") in ("known", "unknown", "before"):
+        return ""
+    if prof.get("who") is None and any(m.out for m in history):
+        people.save_profile(chat_id, who, who="before")  # you have talked before: no "who is this?" out of nowhere
+        return ""
+    info = await people.introduced(http, their_text)
+    if info:
+        name, about = info["name"], info["about"]
+        people.save_profile(chat_id, name, who="known", given_name=name, about=about, telegram_name=who,
+                            username=contact.username, met=time.strftime("%Y-%m-%d"))
+        memory.add_note(chat_id, f"представился: {name}" + (f" ({about})" if about else ""), source="intro", who=name)
+        saved = ""
+        if C.ADD_CONTACTS:
+            try:
+                await client(functions.contacts.AddContactRequest(id=contact, first_name=name, last_name=about[:30],
+                                                                   phone="", add_phone_privacy_exception=False))
+                saved = " and saved to your contacts"
+            except errors.RPCError as e:
+                log.info("%s: could not add to contacts (%s)", who, e.__class__.__name__)
+        names[chat_id] = name + (f" ({about})" if about else "")
+        log.info("%s introduced themselves as %s", who, name)
+        trace.emit("system", who, f"Now known as {name}" + (f" — {about}" if about else "") + saved)
+        spawn(client.send_message("me", f"👤 New person: {name}" + (f" — {about}" if about else "")
+                                  + (f" (@{contact.username})" if contact.username else "") + f".\nNoted{saved}."))
+        return f"\nThey just told you who they are: {name}" + (f" ({about})" if about else "") + ". Take it in naturally.\n"
+    tries = prof.get("asked", 0)
+    if tries >= 2:
+        people.save_profile(chat_id, who, who="unknown")  # asked twice, no answer: leave it
+        return ""
+    people.save_profile(chat_id, who, who="asked", asked=tries + 1, telegram_name=who, username=contact.username)
+    trace.emit("decision", who, "Not in your contacts and never talked — asking who it is")
+    return people.ASK_HINT
+
+
+async def write_first():
+    """Now and then, open a chat yourself: ask how the thing they told you about went, or just what's up."""
+    now = datetime.now()
+    if not C.INITIATE_ON or state.is_paused() or state.approve or rhythm.asleep() or rhythm.busy() \
+            or not C.INITIATE_HOURS[0] <= now.hour < C.INITIATE_HOURS[1]:
+        return
+    record = state.initiated
+    if record.get("date") != now.strftime("%Y-%m-%d"):
+        record.update(date=now.strftime("%Y-%m-%d"), count=0)
+    if record["count"] >= C.INITIATE_MAX:
+        return
+    with_reason, friends = [], []
+    for prof in people.everyone():
+        cid = prof.get("id")
+        if not isinstance(cid, int) or cid in pending or cid in commander_ids or cid in state.manual \
+                or not state.is_active(cid, C.REPLY_MODE) or state.handed_off(cid) \
+                or time.time() - record.get("last", {}).get(str(cid), 0) < C.INITIATE_GAP:
+            continue
+        thread = people.due_thread(cid) if C.REMEMBER else None
+        if thread:
+            with_reason.append((cid, thread))
+        elif prof.get("closeness") == "close":
+            friends.append((cid, None))
+    if not with_reason and (not friends or random.random() > C.INITIATE_CHANCE):
+        return
+    chat_id, thread = random.choice(with_reason or friends)
+    history = await client.get_messages(chat_id, limit=C.CONTEXT_MESSAGES)
+    if not history:
+        return
+    quiet = time.time() - history[0].date.timestamp()
+    if not history[0].out and quiet < C.RECENT_UNANSWERED:
+        return  # they are waiting for an answer anyway; that is the reply flow's job
+    if quiet < C.INITIATE_QUIET[0] and not thread or quiet > C.INITIATE_QUIET[1]:
+        return
+    contact = await client.get_entity(chat_id)
+    if not isinstance(contact, User) or contact.bot:
+        return
+    who = names.setdefault(chat_id, full_name(contact))
+    ask = (f"ask how “{thread['what']}” went — they told you about it on {thread['noted']}" if thread
+           else "ask what they are up to, or how the day is going")
+    system = persona.format(name=me.first_name or full_name(me), contact=who, style=style_block(who, "", contact),
+                            now=now.strftime("%A %d %B %Y, %H:%M"), status=rhythm.status())
+    system += memory.facts_block(full_name(me)) + memory.notes_block(chat_id, who)
+    messages = to_chat_messages(history) + [{"role": "user", "content": (
+        "[No new message from them. You decide to text them first, after a pause in the conversation. Write ONE short "
+        f"opening line the way you text this person out of the blue: {ask}. In the language you two use. No formal "
+        "greeting, no news about yourself, no emoji, nothing that was already said above. Output only the line.]")}]
+    try:
+        resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS,
+                                                  "max_tokens": 60, "temperature": C.TEMPERATURE})
+    except httpx.HTTPError:
+        return
+    if resp.is_error:
+        return
+    lines = clean_reply(resp.json()["reply"]).splitlines()
+    opener = punct.apply(lines[0].strip(), punct_profile(contact)) if lines else ""
+    if not opener or len(opener) > 70 or not looks_safe(opener) or media.MEDIA_LINE_RE.match(opener) \
+            or stale_parts(history, [opener]) or judge.overreach("", opener, memory.today_note()):
+        trace.emit("decision", who, f"Thought of writing first, but the line wasn't good — skipped: {opener[:60]}")
+        return
+    trace.emit("decision", who, "Writing first" + (f" — to ask about “{thread['what']}”" if thread else ""))
+    await type_like_a_person(chat_id, opener)
+    await send_as_bot(chat_id, opener)
+    record["count"] += 1
+    record.setdefault("last", {})[str(chat_id)] = time.time()
+    state.save()
+    if thread:
+        people.mark_asked(chat_id, who, thread["what"])
+    trace.emit("sent", who, opener)
+    daylog.record("replied", who, opener, them="(you wrote first)")
+    log.info("%s: wrote first (%d chars)", who, len(opener))
+
+
+async def initiative_loop():
+    while True:
+        await asyncio.sleep(600)
+        try:
+            await write_first()
+        except Exception:
+            log.exception("Writing first failed")
+
+
 async def reply_flow(chat_id: int, contact: User):
     global me
     who = names[chat_id] = full_name(contact)
@@ -701,6 +828,16 @@ async def reply_flow(chat_id: int, contact: User):
         await asyncio.sleep(rand(C.THINK_DELAY))
 
         hint = ""
+        if C.CLOSENESS_ON:
+            level = await people.closeness(client, chat_id, contact, bool(contact_style_path(contact)))
+            if not contact_style_path(contact) or level == "family":  # a learned per-person style already carries the tone
+                hint += people.CLOSENESS_HINT[level]
+        intro = await who_is_this(chat_id, contact, who, history, their_text)
+        asking_who = intro == people.ASK_HINT
+        hint += intro
+        due = people.due_thread(chat_id) if C.REMEMBER else None
+        if due:
+            hint += people.thread_hint(due)
         photo_msg = await pfp.find_request(history) if C.PFP_FROM_CHATS else None
         if photo_msg:
             trace.emit("decision", who, "They asked me to use their photo as the profile picture — checking it")
@@ -920,7 +1057,10 @@ async def reply_flow(chat_id: int, contact: User):
         # A second look before anything is sent: wrong language, nonsense words, a missed question…
         if C.REVIEW and from_model:
             expected = "the language these two normally use with each other" if contact_style_path(contact) else None
-            problem = await judge.review(http, their_text, "\n".join(parts), expected)
+            # a sticker, a GIF or one word says nothing about the language: go by how this chat has been going
+            basis = their_text if len(their_text.split()) >= 2 else "\n".join(
+                [their_text] + [m.raw_text for m in history if m.raw_text][:6])
+            problem = await judge.review(http, basis, "\n".join(parts), expected)
             if problem and problem.startswith("Uzbek word") and contact_style_path(contact):
                 FORCE_LANG[str(contact_style_path(contact))] = "ru"  # the model's Uzbek failed: answer in Russian
             if problem:
@@ -929,10 +1069,13 @@ async def reply_flow(chat_id: int, contact: User):
                 retry_hint = hint + f"\nYour previous draft was rejected: {problem}. Write a better, simpler reply.\n"
                 if problem.startswith(("Uzbek word", "wrong language (uz")):
                     retry_hint += "Write this reply in Russian.\n"
+                elif problem.startswith("wrong language"):
+                    retry_hint += ("Write in the language this chat is in. If you meant to send a GIF, write a normal "
+                                   "short text reply instead.\n")
                 reply = clean_reply(await generate(history, contact, retry_hint) or "")
                 parts = [p if media.MEDIA_LINE_RE.match(p) else punct.apply(p, habits)
                          for p in split_reply(reply, len(several)) if allow_media or not media.MEDIA_LINE_RE.match(p)]
-                problem = (await judge.review(http, their_text, "\n".join(parts), expected)
+                problem = (await judge.review(http, basis, "\n".join(parts), expected)
                            if parts and looks_safe(reply) else "no usable second draft")
                 if problem:
                     log.warning("%s: second draft rejected too (%s) — leaving it to the owner", who, problem)
@@ -941,6 +1084,11 @@ async def reply_flow(chat_id: int, contact: User):
                     await client.send_message("me", f"🤷 I couldn't write a good reply to {who} ({problem}).\n"
                                                     f"“{their_text[:300]}”\nThat one is yours.")
                     return
+
+        # An unknown person must actually be asked who they are, even if the model forgot to.
+        if from_model and asking_who and not any(people.ASKS_WHO_RE.search(p) for p in parts):
+            parts = parts[:1] + [people.WHO_LINES.get(lang.base(lang.detect(their_text)), people.WHO_LINES["ru"])]
+            reply = "\n".join(parts)
 
         # Two thoughts, two messages — the way people text.
         if from_model and C.SPLIT_ON and not formal and not several and random.random() < C.SPLIT_CHANCE:
@@ -1070,6 +1218,8 @@ async def reply_flow(chat_id: int, contact: User):
                     trace.emit("sent", who, f"[reaction {emoji}] on their message")
                 except errors.RPCError:
                     pass
+        if due and sent_count and any(w[:5] in " ".join(parts).lower() for w in re.findall(r"[^\W\d_]{4,}", due["what"].lower())):
+            people.mark_asked(chat_id, who, due["what"])  # the follow-up was asked; not again
         if C.REMEMBER:
             theirs = [m.raw_text for m in itertools.takewhile(lambda m: not m.out, history) if m.raw_text]
             spawn(remember_later(chat_id, who, theirs[::-1]))
@@ -1278,7 +1428,7 @@ async def on_note_command(event):
     if chat_id == me.id or not event.is_private:
         await client.send_message("me", "⚠️ use .ai note <text> inside the private chat with that person")
         return
-    memory.add_note(chat_id, text, source="you")
+    memory.add_note(chat_id, text, source="you", who=await resolve_name(chat_id))
     await client.send_message("me", f"🧠 noted about {await resolve_name(chat_id)}: {text}")
 
 
@@ -1410,16 +1560,36 @@ async def pin_commanders():
         trace.emit("system", "", f"Orders are accepted from {len(commander_ids)} other account(s) of yours, without asking back")
 
 
+order_queue: dict[int, list] = {}   # chat -> messages of an order still arriving ("зайди по ссылке" + the link)
+
+
+async def gather_order(event) -> str | None:
+    """Messages from your other account that belong together arrive a moment apart: wait briefly and take them as
+    one. -> the order text, or None if this message was absorbed into one that is already waiting."""
+    queue = order_queue.setdefault(event.chat_id, [])
+    queue.append(event)
+    if len(queue) > 1:
+        return None
+    await asyncio.sleep(4)
+    texts = [e.raw_text.strip() for e in order_queue.pop(event.chat_id, []) if (e.raw_text or "").strip()]
+    return "\n".join(texts)
+
+
 async def obey(event, order: str) -> bool:
     """A message from your other account: if it is an order, carry it out and answer with the result.
     -> False if it was just conversation (then it is answered like any other message)."""
     chat_id = event.chat_id
+    if not pilot.is_order(order):
+        return False  # a question, an opinion, banter: never treated as a command
     commanding.add(chat_id)
     try:
         async with pilot_busy:
             ctx = SimpleNamespace(client=client, http=http, state=state, me=me, send=send_as_bot, set_mode=set_chat_mode)
             try:
-                report = await pilot.run(ctx, order, chat_id, trusted=True, may_chat=True)
+                earlier = [m for m in await client.get_messages(chat_id, limit=8) if m.id < event.id and (m.raw_text or "").strip()]
+                context = "\n".join(f"{'You (the account)' if m.out else 'Owner' if m.sender_id in commander_ids else 'Someone'}: "
+                                    f"{m.raw_text.strip()[:200]}" for m in reversed(earlier[:6]))
+                report = await pilot.run(ctx, order, chat_id, trusted=True, may_chat=True, context=context)
             except Exception:
                 log.exception("Order from a commander failed: %r", order)
                 report = "не получилось, что-то сломалось"
@@ -1495,9 +1665,11 @@ async def on_incoming(event):
     asked.pop(event.chat_id, None)  # they answered (or at least wrote): nothing to ask again
     trace.emit("incoming", who, describe(event.message)[:300])
     spawn(push_history(event.chat_id))
-    if sender.id in commander_ids and (event.raw_text or "").strip():
-        if await obey(event, event.raw_text.strip()):
-            return
+    if sender.id in commander_ids:
+        if pilot.is_order(event.raw_text or "") or event.chat_id in order_queue:
+            order = await gather_order(event)
+            if order is None or await obey(event, order):
+                return
         forced.add(event.chat_id)  # just talking: answered normally, but nothing is withheld from yourself
     if not state.is_active(event.chat_id, C.REPLY_MODE):
         trace.emit("decision", who, "Not replying — auto-replies are paused" if state.is_paused()
@@ -1734,8 +1906,8 @@ async def on_group_mention(event):
     group_done.add((event.chat_id, event.id))
     group_seen[event.chat_id] = max(group_seen.get(event.chat_id, 0), event.id)
     if event.sender_id in commander_ids and (event.raw_text or "").strip():
-        order = name_re().sub(" ", event.raw_text).strip(" ,:")
-        if order and await obey(event, order):
+        order = name_re().sub(" ", event.raw_text).strip(" ,:")  # in a group: only a message that opens with the order
+        if order and pilot.ORDER_RE.match(order) and await obey(event, order):
             return
     sender = await event.get_sender()
     if not isinstance(sender, User) or sender.bot:
@@ -2055,7 +2227,7 @@ async def main():
     spawn(scan_groups())
     background = [asyncio.create_task(bio_loop(client, state)), asyncio.create_task(unread_loop()),
                   asyncio.create_task(summary_loop()), asyncio.create_task(command_loop()),
-                  asyncio.create_task(nudge_loop())]
+                  asyncio.create_task(nudge_loop()), asyncio.create_task(initiative_loop())]
     try:
         await client.run_until_disconnected()
     finally:

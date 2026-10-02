@@ -26,6 +26,8 @@ class State:
         self.handoff: dict[str, float] = data.get("handoff", {})
         # your own other accounts, as given in USERBOT_COMMANDERS -> the numeric id each one was pinned to
         self.commanders: dict[str, int] = data.get("commanders", {})
+        # chats the account opened by itself: {"date": "YYYY-MM-DD", "count": n, "last": {chat id: unix time}}
+        self.initiated: dict = data.get("initiated", {"date": "", "count": 0, "last": {}})
         self.bio_history: list[str] = data.get("bio_history", [])
         self.last_bio_at: float = data.get("last_bio_at", 0)
 
@@ -37,7 +39,7 @@ class State:
             "paused_until": self.paused_until, "bot_sent": self.bot_sent,
             "bio_history": self.bio_history, "last_bio_at": self.last_bio_at,
             "salam_stickers": self.salam_stickers, "pfp_changes": self.pfp_changes,
-            "handled": self.handled, "handoff": self.handoff, "commanders": self.commanders,
+            "handled": self.handled, "handoff": self.handoff, "commanders": self.commanders, "initiated": self.initiated,
         }, indent=2, ensure_ascii=False))
 
     def mark_handled(self, chat_id: int, message_id: int):
