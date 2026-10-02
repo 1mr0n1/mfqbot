@@ -216,6 +216,25 @@ CHAT_ENGLISH = {
 }
 
 
+_uz_words: set[str] | None = None   # an Uzbek dictionary, if you downloaded one (userbot/get_uz_dictionary.py)
+
+
+def in_uz_dictionary(word: str) -> bool:
+    """Is this a real Uzbek word — the dictionary form, or that form with endings added (kitob → kitoblarimizda)?"""
+    global _uz_words
+    if _uz_words is None:
+        path = C.STYLE_DIR / "uz_dictionary.txt"
+        _uz_words = set(path.read_text().split()) if path.exists() else set()
+    if not _uz_words:
+        return False
+    word = re.sub("[ʻ‘’`ʼ]", "'", word.lower())
+    for form in (word, word.replace("'", "")):
+        for cut in range(len(form), 2, -1):  # Uzbek stacks endings on the stem: try the word, then ever shorter stems
+            if form[:cut] in _uz_words and (cut == len(form) or cut >= 4 or len(form) >= 6):
+                return True
+    return False
+
+
 def _load_words():
     global _english, _vocab
     if _english is None:
@@ -285,7 +304,8 @@ def invented_uzbek(them: str, draft: str) -> str | None:
     theirs = set(re.findall(r"[^\W\d_]+(?:['ʻ‘’][^\W\d_]+)*", them.lower().replace("‘", "'").replace("’", "'").replace("ʻ", "'")))
     for word in re.findall(r"[^\W\d_]+(?:['ʻ‘’][^\W\d_]+)*", draft.lower().replace("‘", "'").replace("’", "'").replace("ʻ", "'")):
         plain = word.replace("'", "")
-        if len(plain) < 5 or word in theirs or word in _vocab or plain in _vocab or _is_english(word):
+        if len(plain) < 5 or word in theirs or word in _vocab or plain in _vocab or _is_english(word) \
+                or in_uz_dictionary(word):
             continue
         # everyday spelling drops apostrophes and endings vary: accept if a known word shares most of it
         stem = plain[:max(4, len(plain) - 3)]
