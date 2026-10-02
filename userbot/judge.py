@@ -135,7 +135,7 @@ async def sensitive_reason(http: httpx.AsyncClient, name: str, history, keywords
     try:
         resp = await http.post("/complete", json={
             "messages": [{"role": "user", "content": CLASSIFY.format(name=name, messages=joined[:1500])}],
-            "models": C.MODELS, "max_tokens": 30, "temperature": 0})
+            "models": C.JUDGE_MODELS, "max_tokens": 30, "temperature": 0})
     except httpx.HTTPError:
         return None
     if resp.is_error:

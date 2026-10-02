@@ -77,6 +77,12 @@ BIO_MAX_CHARS = 70             # Telegram limit without Premium
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 MODELS = [m.strip() for m in os.environ.get("USERBOT_MODELS", "nemotron,qwen").split(",") if m.strip()]
 REPLY_MODE = os.environ.get("USERBOT_REPLY_MODE", "allowlist")  # "allowlist" or "all"
+_models = lambda name, default: [m.strip() for m in os.environ.get(name, default).split(",") if m.strip()]
+# Small yes/no jobs (hand-off check, note-taking) don't need the big model: the local one is as accurate, much
+# faster, and keeps the rate-limited model free for writing replies.
+JUDGE_MODELS = _models("USERBOT_JUDGE_MODELS", "local,nemotron")
+PHOTO_MODELS = _models("USERBOT_PHOTO_MODELS", "omni,local,qwen,nemotron")  # who looks at pictures, in order
+HEDGE_AFTER = float(os.environ.get("USERBOT_HEDGE_AFTER", "2.5"))  # s before the 2nd model starts alongside the 1st
 
 # --- Timing (seconds) ---
 DEBOUNCE = (0, 0)              # extra wait before reading (the draft hold below already absorbs message bursts)

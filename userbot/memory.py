@@ -131,7 +131,7 @@ async def remember(http: httpx.AsyncClient, chat_id: int, who: str, their_messag
         known=("Already known (don't repeat):\n" + "\n".join(f"- {n['text']}" for n in known) + "\n") if known else "")
     try:
         resp = await http.post("/complete", json={"messages": [{"role": "user", "content": prompt}],
-                                                  "models": C.MODELS, "max_tokens": 150, "temperature": 0})
+                                                  "models": C.JUDGE_MODELS, "max_tokens": 150, "temperature": 0})
     except httpx.HTTPError:
         return []
     if resp.is_error:

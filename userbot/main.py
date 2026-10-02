@@ -461,8 +461,11 @@ async def generate(history, contact: User, extra: str = "") -> str | None:
         system += judge.REACT_HINT
     system += extra  # what just happened outside the conversation (e.g. a profile photo change)
     try:
-        resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS,
-                                                  "max_tokens": 200, "temperature": C.TEMPERATURE})
+        body = {"messages": messages, "system": system, "max_tokens": 200, "temperature": C.TEMPERATURE,
+                "models": C.PHOTO_MODELS if photos else C.MODELS}
+        if not photos:
+            body["hedge_after"] = C.HEDGE_AFTER  # the second model joins if the first is slow or rate-limited
+        resp = await http.post("/complete", json=body)
     except httpx.HTTPError as e:
         log.warning("Backend unreachable: %r", e)
         return None

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import secrets
@@ -81,6 +82,9 @@ class CompleteRequest(BaseModel):
     max_tokens: int = Field(MAX_TOKENS, ge=1, le=16384)  # reasoning models spend part of this thinking
     reasoning: bool = False  # let the model think first (slower; for analysis jobs, not chat replies)
     temperature: float | None = Field(None, ge=0, le=2)  # lower = more predictable, fewer made-up words
+    # Hedging: if the first model hasn't answered after this many seconds (or fails), the second one is started
+    # alongside it and whichever answers first wins. None = strictly one after the other.
+    hedge_after: float | None = Field(None, ge=0, le=60)
 
 
 @app.get("/health")
@@ -139,12 +143,31 @@ async def complete_stateless(req: CompleteRequest):
     has_images = any(isinstance(m.get("content"), list) for m in req.messages)
     order = sorted(req.models, key=lambda k: not MODELS[k].get("vision")) if has_images else req.models
 
+    async def ask(key: str) -> ChatResponse:
+        reply = await complete(app.state.http, MODELS[key], messages, req.max_tokens, req.reasoning, req.temperature)
+        return ChatResponse(reply=reply, model=key)
+
     error = None
+    if req.hedge_after is not None and len(order) >= 2:
+        first = asyncio.create_task(ask(order[0]))
+        done, _ = await asyncio.wait({first}, timeout=req.hedge_after)
+        if first in done and not first.exception():
+            return first.result()
+        running = {asyncio.create_task(ask(order[1]))} | ({first} if first not in done else set())
+        if first in done:
+            error = first.exception()
+        while running:  # first good answer wins; the slower one is dropped
+            done, running = await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                if not task.exception():
+                    for other in running:
+                        other.cancel()
+                    return task.result()
+                error = task.exception()
+        order = order[2:]
     for key in order:
         try:
-            reply = await complete(app.state.http, MODELS[key], messages, req.max_tokens, req.reasoning,
-                                   req.temperature)
-            return ChatResponse(reply=reply, model=key)
+            return await ask(key)
         except LLMError as e:
             error = e
     raise HTTPException(503, str(error))
