@@ -50,3 +50,15 @@ PYTHONPATH=. .venv/bin/python tests/draft_flow.py     # a draft: held, edited, s
 `live_actions.py` runs against the running bot: it flips every switch and flips it back, changes a chat's mode, a
 group's switch and a person's closeness and restores them, gives one read-only order, and sends two test messages
 to your own other account. It posts nothing to other people or groups.
+
+## 5. The full project check
+
+```
+PYTHONPATH=. .venv/bin/python tests/full_check.py            # everything; or name sections: commands orders replies switches jobs
+```
+
+226 checks that run every `.ai` command, every order action, every way a message can be answered (private,
+group, your other account), every switch on the dashboard (that it changes behaviour, not just its position), the
+daily jobs, every backend address including the from-outside guard, the Telegram bot's commands, and the scripts
+(services, backup and restore). Telegram is replaced by a stand-in that records what the account would have done;
+the models and the backend are real. It writes `full_check.json`.

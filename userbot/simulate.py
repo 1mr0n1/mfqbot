@@ -33,6 +33,8 @@ from . import config as C  # noqa: E402
 _tmp = tempfile.mkdtemp(prefix="userbot-sim-")
 C.DAYLOG_PATH = Path(_tmp) / "daylog.json"
 C.MEMORY_DIR = Path(_tmp) / "memory"
+C.CLIPS_PATH = Path(_tmp) / "clips.json"   # simulations never see (or change) your saved clips
+C.TODAY_PATH = Path(_tmp) / "today.json"
 C.LOOKUP_ON = False  # scripted chats don't go out to the web
 C.RETRY_DELAY = (0, 0)
 C.BETWEEN_MESSAGES = (0, 0)
@@ -50,7 +52,7 @@ _ids = itertools.count(1000)
 def message(text="", out=False, **kw):
     msg = NS(id=next(_ids), message=text, out=out, date=datetime.now(timezone.utc), photo=None, voice=None, video=None,
              video_note=None, document=None, sticker=None, gif=None, media=None, file=None, is_reply=False,
-             sender=None, fwd_from=None)
+             sender=None, fwd_from=None, sender_id=None, poll=None, action=None, reply_to_msg_id=None, mentioned=False)
     msg.__dict__.update(kw)
     return msg
 

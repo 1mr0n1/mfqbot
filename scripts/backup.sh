@@ -46,7 +46,8 @@ case "${1:-run}" in
     tar -czf - $items | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "pass:$P" -out "$out"
     ls -t "$D"/mfqbot-*.tar.gz.enc 2>/dev/null | tail -n +$((KEEP + 1)) | while read -r old; do rm -f "$old"; done
     echo "$(date '+%F %T') backup written: $out ($(du -h "$out" | cut -f1))" ;;
-  list)       ls -lh "$(dest)"/mfqbot-*.tar.gz.enc 2>/dev/null | awk '{print $5, $6, $7, $8, $9}' ;;
+  list)       D=$(dest); echo "in $D:"
+              for f in "$D"/mfqbot-*.tar.gz.enc; do [ -f "$f" ] && echo "  $(basename "$f")  $(du -h "$f" | cut -f1)"; done ;;
   passphrase) pass ;;
   restore)
     [ -f "$2" ] || { echo "usage: sh scripts/backup.sh restore FILE"; exit 1; }

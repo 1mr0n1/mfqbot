@@ -61,10 +61,10 @@ async def transcript(msg) -> str:
     """Transcript of a voice / round-video message ('' if it can't be heard). Cached per message."""
     if not C.VOICE_TRANSCRIBE or not (msg.voice or msg.video_note):
         return ""
-    key = msg.document.id
+    key = getattr(msg.document, "id", None) or msg.id
     if key in _cache:
         return _cache[key]
-    if (msg.file.duration or 0) > C.VOICE_MAX_SECONDS:
+    if (getattr(msg.file, "duration", 0) or 0) > C.VOICE_MAX_SECONDS:
         return ""
     try:
         data = await msg.download_media(file=bytes)

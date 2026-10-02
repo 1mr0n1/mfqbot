@@ -451,6 +451,10 @@ async def reply_flow(chat_id: int, contact: User):
                 trace.emit("warning", who, "Giving up — no model answered")
             action = judge.parse_model_choice(reply or "") if C.SMART_SKIP and not greeting.reply else None
             if keep_going and not action and "?" not in (reply or ""):
+                # one more try, said more plainly, before settling for a reaction
+                reply = await generate(history, contact, hint + (
+                    "\nYour line has to END WITH A QUESTION for them — one short question, nothing else.\n")) or ""
+            if keep_going and not action and "?" not in (reply or ""):
                 # the point was to give them something to answer; a filler line doesn't, so close like a person would
                 trace.emit("decision", who, "No good question came to mind — leaving it at a reaction")
                 action = judge.closer_action(history, state.handled.get(str(chat_id), 0)) if C.SMART_SKIP else None

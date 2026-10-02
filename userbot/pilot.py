@@ -23,7 +23,6 @@ import re
 import socket
 import time
 import urllib.parse
-from pathlib import Path
 from datetime import datetime, timedelta
 
 import httpx
@@ -365,12 +364,12 @@ async def send_poll(ctx, run, chat, question, options):
     if len(options) < 2:
         raise Refused("a poll needs at least 2 options")
     _count_send(run, entity)
-    try:
-        text = lambda s: types.TextWithEntities(s, [])
-        poll = types.Poll(id=0, question=text(str(question)),
-                          answers=[types.PollAnswer(text(o), bytes([i])) for i, o in enumerate(options)])
-    except (AttributeError, TypeError):
-        poll = types.Poll(id=0, question=str(question), answers=[types.PollAnswer(o, bytes([i])) for i, o in enumerate(options)])
+    text = lambda s: types.TextWithEntities(s, [])
+    fields = {"id": 0, "question": text(str(question)),
+              "answers": [types.PollAnswer(text(o), bytes([i])) for i, o in enumerate(options)]}
+    if "hash" in inspect.signature(types.Poll.__init__).parameters:
+        fields["hash"] = 0  # newer Telegram layers require it; older ones don't know it
+    poll = types.Poll(**fields)
     await ctx.client.send_message(entity, file=types.InputMediaPoll(poll=poll))
     return f"poll sent to {_name(entity)}"
 
@@ -800,8 +799,7 @@ async def needs_yes(ctx, run, name: str, args: dict) -> str | None:
 # ---------- the loop ----------
 def people() -> str:
     """What you wrote about yourself and your people (facts.md): tells the pilot who "mom" or "Cuh" is."""
-    path = Path(__file__).with_name("facts.md")
-    return path.read_text()[:2500] if path.exists() else ""
+    return C.FACTS_PATH.read_text()[:2500] if C.FACTS_PATH.exists() else ""
 
 
 def prompt(ctx, here_name: str | None, chats: str = "", may_chat: bool = False, trusted: bool = False) -> str:
