@@ -557,13 +557,20 @@ async def set_avatar(ctx, run, query="", chat=""):
     return "profile photo changed"
 
 
-@tool("(nothing) — delete the current profile photo (the one before it becomes current again)", risky=True)
-async def remove_avatar(ctx, run):
-    photos = await ctx.client.get_profile_photos("me", limit=1)
-    if not photos:
-        raise Refused("there is no profile photo")
-    await ctx.client(functions.photos.DeletePhotosRequest(id=[utils.get_input_photo(photos[0])]))
-    return "current profile photo deleted"
+@tool("which='current' — delete ONE profile photo: 'current' (the one shown now), 'previous' (the one that was "
+      "before it; the current one stays), or a number counting from the newest (1 = current, 2 = previous, 3…)", risky=True)
+async def remove_avatar(ctx, run, which="current"):
+    position = {"current": 1, "now": 1, "new": 1, "previous": 2, "before": 2, "old": 2, "last": 2}.get(str(which).lower())
+    if position is None:
+        if not str(which).isdigit() or not 1 <= int(which) <= 20:
+            raise Refused("which must be 'current', 'previous' or a number from 1")
+        position = int(which)
+    photos = await ctx.client.get_profile_photos("me", limit=position)
+    if len(photos) < position:
+        raise Refused(f"there are only {len(photos)} profile photo(s)")
+    await ctx.client(functions.photos.DeletePhotosRequest(id=[utils.get_input_photo(photos[position - 1])]))
+    left = "the current one is unchanged" if position > 1 else "the one before it is shown now"
+    return f"profile photo number {position} from the newest deleted; {left}"
 
 
 @tool("username — change your @username ('' removes it)", risky=True)
@@ -783,7 +790,8 @@ def prompt(ctx, here_name: str | None, chats: str = "", may_chat: bool = False, 
         "скрой/покажи время захода, номер, фото, \"кто может звонить/добавлять\" → set_privacy; "
                 "ава/аватарка/фото профиля/pfp → set_avatar. \"это\"/\"this\" photo means the photo in the chat: set_avatar "
         "with chat=\"here\" and NO query. Use query only when the owner describes a picture to find (\"поставь на аву "
-        "кота\"); never make up a query from what a photo shows. убери/удали аву → remove_avatar; "
+        "кота\"); never make up a query from what a photo shows. убери/удали аву → remove_avatar; \"ту что была до / the one before / previous / старую\" → "
+        "remove_avatar with which=\"previous\" (NEVER the current one unless he says current); "
                 "закрепи → pin_last; достань из архива/разархивируй → archive with on=false; "
         "\"не отвечай X автоматически\", \"я сам отвечу X\" → bot_mode manual; \"не трогай чат X\" → bot_mode off; "
         "напомни/позже/в HH:MM → schedule_message; \"ответь всем кто ждёт\" → list_chats(unread=true, kind=person) "
