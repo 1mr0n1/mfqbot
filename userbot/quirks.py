@@ -22,13 +22,15 @@ def fix_greeting(reply: str, their_text: str, formal: bool) -> str:
         rest = reply[salam_start.end():].strip()
         if rest:
             return rest[0].upper() + rest[1:]
-    match = LEADING_GREETING_RE.match(reply)
+    match = LEADING_GREETING_RE.match(reply) or LEADING_GREETING_RE.match(reply.strip() + " ")
     if not match:
         return reply
     rest = reply[match.end():].strip()
     greeted = bool(THEY_GREET_RE.search(their_text))
     if not greeted and not formal and rest:
         return rest[0].upper() + rest[1:]
+    if not greeted and not formal and their_text.strip() and not match.group(1).lower().startswith("yo"):
+        return "?"  # "ой раскладка" — "Привет" answers nothing
     if not formal and match.group(1).lower().startswith("здравствуйте"):
         return ("Привет, " + rest) if greeted and rest else (rest[0].upper() + rest[1:] if rest else "Привет")
     return reply

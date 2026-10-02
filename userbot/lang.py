@@ -187,6 +187,8 @@ def detect(text: str) -> str | None:
     if scores[best] and (best in ("uz", "ru-latn", "en") or scores[best] >= 2 or len(words) < 3):
         return best
     if len(words) < 3:
+        if any(len(w) >= 6 and w.endswith(("misan", "misiz", "yapman", "yapsan", "dingmi", "asanmi", "dagi", "larni")) for w in words):
+            return "uz"  # "Uydamisan", "kelyapsan": the ending gives it away
         return "en"  # nothing recognized and short: treat as English
     try:  # longer: English if most words are in the system dictionary or common chat English
         from .judge import _is_english, _load_words

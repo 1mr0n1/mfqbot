@@ -37,8 +37,8 @@ REACTIONS = ["👍", "❤"]  # the only reactions the account uses
 def _closer_kind(text: str) -> str | None:
     """-> 'thanks' | 'bye' | 'ack' | 'laugh' | 'emoji' if the whole message is just that, else None."""
     text = text.strip()
-    if "?" in text:
-        return None  # "?" / "??" means "hello, answer me", not "bye"
+    if "?" in text or re.search(r"\d\s*[+\-*/x×]\s*\d", text):
+        return None  # "?" / "??" means "hello, answer me", not "bye"; "а 391/17" is a question
     if not text or EMOJI_ONLY_RE.match(text):
         return "emoji"
     words = [w for w in re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)*", text.lower()) if w not in VOCATIVE]
@@ -59,6 +59,9 @@ def _closer_kind(text: str) -> str | None:
     return "ack"
 
 
+NIGHT_RE = re.compile(r"спокойной|сладких\s+снов|\bспок\w*|доброй\s+ночи|good\s*night|\bgn\b|xayrli\s+tun|хайрли\s+тун|yaxshi\s+(dam|uxla)", re.I)
+
+
 def closer_action(history, after_id: int = 0) -> str | None:
     """-> 'react:<emoji>' or None (= answer normally). Only when they're closing after YOUR message.
 
@@ -71,6 +74,9 @@ def closer_action(history, after_id: int = 0) -> str | None:
     from . import salam
     if all(salam.is_response(m.raw_text or "") and len(salam.remainder(m.raw_text or "").split()) < 3 for m in unanswered):
         return "skip"  # they answered your greeting; nothing to add
+    mine = next((m for m in history if m.out), None)
+    if any(NIGHT_RE.search(m.raw_text or "") for m in unanswered) and not (mine and NIGHT_RE.search(mine.raw_text or "")):
+        return None  # "спокойной ночи" is wished back, once
     kinds = []
     for msg in unanswered:
         if msg.photo or msg.voice or msg.video or msg.video_note or (msg.document and not msg.sticker):
@@ -150,7 +156,10 @@ CRISIS_RE = re.compile(
     r"хочу\s+сбежать\s+из\s+дома|сбегу\s+из\s+дома|"
     r"kill\s+myself|want\s+to\s+die|don'?t\s+want\s+to\s+live|no\s+reason\s+to\s+live|suicid\w*|self[-\s]?harm|"
     r"(he|she|they|dad|mom)\s+(hits?|beats?)\s+me|being\s+blackmailed|blackmail\w*|"
-    r"yashagim\s+kelmay\w*|o'?lgim\s+kel\w*|meni\s+ur(adi|ishadi|yapti)", re.I)
+    r"yashagim\s+kelmay\w*|o'?lgim\s+kel\w*|meni\s+ur(adi|ishadi|yapti)|"
+    r"скор(ую|ая)\s+(вызвал\w*|едет|приехал\w*|увезл\w*)|вызвал\w*\s+скор\w+|в\s+реанимаци\w*|"
+    r"(бабушк|дедушк|мам|пап|брат|сестр)\w*\s+(стало\s+|очень\s+)?плохо|плохо\s+(стало\s+)?(с\s+)?(бабушк|дедушк|мам|пап)\w*|"
+    r"приезжай\s+срочно|срочно\s+приезжай|tez\s+yordam\s+chaqir\w*|(buving|bobong|oying|dadang)\w*\s+(ahvoli\s+)?yomon", re.I)
 
 
 def crisis(history) -> bool:
@@ -164,7 +173,7 @@ STRONG = [  # unmistakable cases, decided without a model
      r"|\b(code|код|kod)\b\W+(\w+\W+){0,3}(sms|смс|пришл\w*|прислал\w*|отправ\w*|скин\w*|keldi|yubor\w*|ayt\w*|came|sent)"),
     # asking for money or a transfer — not merely mentioning money or a price
     ("money", rf"\b(lend|borrow|loan)\b|\bowe\s+(me|you|u)\b|\bзайм\w*\b(?!\s+(мне\s+)?(место|очередь|стол))|\bзаня(ть|л|ла)\b(?!\s+(мне\s+)?(место|очередь|стол))"
-              rf"|\bодолж\w*|\bв\s+долг\b|\bqarz\w*|номер\w*\s+карт\w*|card\s+number|karta\s+raqam\w*|реквизит\w*"
+              rf"|\bодолж\w*|\bв\s+долг\b|\bqarz\w*|мне\s+долж(ен|на)\b|сколько\s+(ты\s+)?(мне\s+)?долж\w+|ты\s+(же\s+)?занимал|верни\s+(мне\s+)?(деньги|долг|\d+)|когда\s+(отдашь|верн[её]шь)\s+(деньги|долг)|номер\w*\s+карт\w*|card\s+number|karta\s+raqam\w*|реквизит\w*"
               rf"|\b{ASK}\b[^.?!\n]{{0,40}}{AMOUNT}|{AMOUNT}[^.?!\n]{{0,25}}\b{ASK}\b"),
     # something happening right now, not a word that just sounds urgent
     ("an emergency", r"\b(emergency|ambulance)\b|\b(in|at)\s+(the\s+)?hospital\b|\b(car\s+)?accident\b|\bcall\s+the\s+police\b"
@@ -347,6 +356,9 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
     if _norm(text) and _norm(text) == _norm(last_theirs) and not GREETING_RE.match(last_theirs.strip()) \
             and len(_norm(text).split()) >= 2:
         return "it repeats their message"
+    if re.search(r"перевед\w*|перевод\w*|translat\w*|tarjima\w*|на\s+(узбекск|английск|русск)\w*|по[-\s](узбекски|английски|русски)|"
+                 r"\bin\s+(english|russian|uzbek)\b|(inglizcha|o'zbekcha|ruscha)", them, re.I):
+        return None
     their_lang, draft_lang = lang.base(lang.detect(them)), lang.base(lang.detect(text))
     their_cyrillic = bool(re.search("[а-яё]", them, re.I))
     # Only clear mismatches count. A Russian answer to Latin-script text (transliterated Russian, Uzbek, mixed)
@@ -390,7 +402,14 @@ PLAN_RE = re.compile(
     r"отдашь|ждём|ждем|выходи|подойд[её]шь|переночу\w*|купи\w*|позвони\w*|забери\w*|сходи\w*|съезди\w*|приезжай\w*|"
     r"приходи\w*|заходи\w*|отнеси\w*|верни\w*|оплати\w*|закажи\w*|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
     r"\b(wanna|coming|come\s+(over|to)|meet|bring|let'?s)\b|kelasan\w*|borasan\w*|chiqasan\w*|uchrash\w*|olib\s+kel|"
-    r"\b\w{3,}(asanmi|asizmi|asilami|asila|aymi|amizmi|olasanmi)\b|\bborib\s+kel|\bkelib\s+ket|\b(bor|kel|ol|ber|ayt)(ing|gin)?\b", re.I)
+    r"\b\w{3,}(asanmi|asizmi|asilami|asila|aymi|amizmi|olasanmi)\b|\bborib\s+kel|\bkelib\s+ket|\b(bor|kel|ol|ber|ayt)(ing|gin)?\b|"
+    r"\b(och|qil|yoz|yubor|tashla|chiq|yop|o['ʻ‘’]?chir|uxla)(ing|gin)?\b|верн[её]шь|вернуть|отдашь|отдать|верни\b", re.I)
+# a promise said flat, whatever they wrote: "скоро буду", "уже иду", "ща приду"
+FLAT_PROMISE_RE = re.compile(
+    r"\b(скоро\s+буду|буду\s+через|ща[сз]?\s+(приду|буду|выйду|зайду|открою|принесу)|уже\s+(иду|еду|выхожу|бегу|открываю)|"
+    r"(иду|еду|выхожу|бегу)\s+уже|выезжаю|on\s+my\s+way|omw|kelyapman|boryapman|chiqyapman)\b"
+    r"|^\W*(иду|еду|бегу|выхожу|открываю|открыл|coming|ochyapman)\W*$", re.I)
+SOON_RE = re.compile(r"\W*(завтра|сегодня|вечером|утром|скоро|ertaga|bugun|kechqurun|tomorrow|today|tonight|soon)\W*", re.I)
 COMMIT_RE = re.compile(
     r"\b(уберу|покажу|помою|вынесу|перезвоню|наберу|напишу|напомню|sending|on\s+it|will\s+do)\b|\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|переночую|куплю|"
     r"позвоню|заберу|схожу|съезжу|отнесу|верну|оплачу|закажу|поеду|пойду|"
@@ -407,6 +426,7 @@ STATE_Q_RE = re.compile(
     r"|\b(температура|деньги|время|еда|зарядка|ключи)\s+есть\s*\?|\bесть\s+(температура|деньги|время)\s*\?"
     r"|\b(дома|там|рядом|свободен|свободна|занят|занята|идешь|идёшь|едешь|готов|готова)\s*\?"
     r"|\b\w{3,}(mi|misan|misiz|ми|мисан|мисиз)\s*\?", re.I)
+UZ_Q_RE = re.compile(r"\b\w{3,}(misan|misiz|мисан|мисиз)\b|\b[a-z'ʻ‘’]{3,}mi\b(?!\s*-)", re.I | re.M)
 CLAIM_RE = re.compile(r"^\W*(да|нет|нету|есть|не|неа|ага|угу|ещё\s+нет|еще\s+нет|пока\s+нет|уже|yes|yeah|yep|no|nope|nah|not\s+yet|"
                       r"ha|haa|yo['ʻ‘’]?q|yoq|xa|ха|йўқ|йук|ҳа|hali\s+yo['ʻ‘’]?q|"
                       r"\w{2,}(dim|madim|ganman|maganman))\b", re.I)
@@ -436,7 +456,20 @@ SITUATION_RE = re.compile(
     r"|\bс\s+кем\s+(ты|вы|гуля|сид|игра|ид|пойд)\w*|\bкто\s+(с\s+тобой|там|у\s+тебя)\b"
     r"|\bwhere\s+(are|r)\s+(you|u)\b|\bwya\b|\bwhen\s+(will|are|r)\s+(you|u)\b|\bhow\s+long\b|\bwhat\s+did\s+(you|u)\s+(eat|get|order|buy)\b"
     r"|\bwho('?s|\s+is|\s+are)?\s+(you\s+|u\s+)?(with|there)\b|\bwhat('?s|\s+is)\s+the\s+(hw|homework)\b"
-    r"|\bqayer\w*|\bqatta\w*|\bqachon\s+(kel|chiq|bor|qayt)\w*|\bkim\s+bilan\b|\bnima\s+(yeding|olding|berdi)\w*", re.I)
+    r"|\bqayer\w*|\bqatta\w*|\bqachon\s+(kel|chiq|bor|qayt)\w*|\bkim\s+bilan\b|\bnima\s+(yeding|olding|berdi)\w*"
+    r"|^\W*с\s+кем\W*$|^\W*когда\s+домой\W*$|\bкогда\s+(ты\s+)?домой\s*\?|\bкогда\s+дома\s+будешь\b"
+    # marks and tests: only you know
+    r"|\bкак(ая|ую|ие)\s+(оценк|отметк)\w*|\bчто\s+(получил|поставили)\b|\bсколько\s+(получил|баллов)\b|\bnecha\s+(olding|baho)\w*"
+    r"|\b(контрольная|контроша|кр|экзамен|сор|соч|зач[её]т)\s+когда\b|\bкогда\s+(контрольная|контроша|кр|экзамен|сор|соч|зач[её]т)\b"
+    r"|\bпо\s+какой\s+теме\b|\bкакой\s+кабинет\b|\bкто\s+дежурит\b"
+    r"|\bкто\s+(у\s+(вас|тебя)\s+)?(классрук\w*|классн\w+\s+руководител\w+|директор\w*|ведёт|ведет)|\bкак\s+(его|е[её])\s+зовут\b"
+    r"|\bкак\s+зовут\s+(тво\w+|ваш\w+)\s+(учител\w+|классн\w+|директор\w*|тренер\w*)"
+    # things about THEM that the account was never told
+    r"|\bкогда\s+у\s+меня\s+(др|день\s+рождени\w+)\b|\bкак\s+зовут\s+мо\w+|\bкакого\s+цвета\s+(у\s+меня|мо\w+)|\bсколько\s+мне\s+лет\b"
+    r"|\bчто\s+я\s+тебе\s+(вчера\s+|сегодня\s+)?(дал|давал|говорил|писал|сказал|обещал)\b|\bwhen('?s|\s+is)\s+my\s+(birthday|bday)\b",
+    re.I | re.M)
+QWORD_RE = re.compile(r"^\W*(а\s+)?(когда|где|куда|что|чё|че|чо|с\s+кем|кто|сколько|во\s+сколько|qachon|qayer\w*|kim|nima|necha|when|where|"
+                      r"what|who|how)\b", re.I | re.M)
 # a draft that reports something only you could know: what you did, where you are, numbers, times
 REPORT_RE = re.compile(
     r"\b(получил|купил|заказал|поел|съел|сдал|взял|выиграл|проиграл|принес|забрал|сходил|съездил)[аи]?\b"
@@ -452,6 +485,7 @@ NOT_KNOWN_HINT = (
 # "я дома", "ha, uydaman", "i'm at school": where you are, stated flat — nobody told the account
 WHERE_I_AM_RE = re.compile(
     r"^\W*(?:(?:да|ага|угу|ну|ha|xa|yes|yeah|yep)\W+)?(?:я\s+)?(?:уже\s+|щас\s+|сейчас\s+)?(дома|в\s+школе|на\s+уроке|на\s+улице|в\s+пути|в\s+дороге)\W*$"
+    r"|\b(дома\s+(сижу|лежу|валяюсь)|(сижу|лежу|валяюсь)\s+дома|doma\s+si[dzj]\w+)\b"
     r"|\b(uyda|maktabda|darsda|yo['ʻ‘’]?lda|ko['ʻ‘’]?chada|ishda)man\b|^\W*(?:(?:yes|yeah|yep)\W+)?i'?m\s+(at\s+)?(home|school)\W*$", re.I)
 # an amount of money: "50$", "300-350$", "275.000 сум", "20к"
 AMOUNT_RE = re.compile(r"\$\s?\d+|\d[\d.,\s-]*\s?(\$|usd|сум\w*|so['ʻ‘’]?m|sum\b|ming\b|тыс\w*|руб\w*|доллар\w*|бакс\w*|[кk]\b)", re.I)
@@ -461,14 +495,25 @@ PAY_RE = re.compile(r"\b(скину|кину|переведу|отправлю|�
 MONEY_WORD_RE = re.compile(r"деньг|денег|бабк|бабл|\bpul\w*|\bmoney\b|\bcash\b", re.I)
 
 
+def _in_facts(draft: str, them: str) -> bool:
+    """Every real word of the draft is in your facts file, and so is what they asked about."""
+    try:
+        facts = C.FACTS_PATH.read_text().lower()
+    except OSError:
+        return False
+    words = re.findall(r"[^\W\d_]{4,}", draft.lower())
+    asked = [w[:6] for w in re.findall(r"[^\W\d_]{6,}", them.lower())]
+    return bool(words) and all(w in facts for w in words) and any(w in facts for w in asked)
+
+
 def made_up(them: str, draft: str, known_today: str = "") -> bool:
     """They asked about your situation right now and the draft answers with specifics nobody gave the account."""
     text = draft.strip()
     if known_today or not text or text.endswith("?") or UNSURE_RE.search(text):
         return False
     if SITUATION_RE.search(them):
-        return True
-    return "?" in them and bool(REPORT_RE.search(text))
+        return not _in_facts(text, them)  # your form teacher's name, your timetable: written down, so not made up
+    return ("?" in them or bool(QWORD_RE.search(them))) and bool(REPORT_RE.search(text))
 
 
 RELAY_RE = re.compile(r"передай\w*|скажи\s+(ему|ей|им|маме|папе|\w+е)\b|\bayt\b|aytib\s+qo|\btell\s+(him|her|them|your)\b", re.I)
@@ -491,22 +536,28 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
     if DONE_RE.match(text) and not known_today:
         return "claim"
     # a whole reply that is one past-tense verb about yourself ("Открыл", "Купил", "Пришёл") reports something you did
-    if not known_today and re.fullmatch(r"\W*(?:уже\s+|да,?\s+)?[а-яё]{3,}(?:ил|ал|ыл|ел|[её]л|ёс|ес)(?:ся)?\W*", text) \
+    if not known_today and re.fullmatch(r"\W*(?:уже\s+|да,?\s+|я\s+)?(?:не\s+)?[а-яё]{2,}(?:ил|ал|ыл|ел|ул|ял|[её]л|ёс|ес)(?:ся)?\W*", text) \
             and not re.search(r"\b(понял|узнал|слышал|видел|знал|думал|забыл|устал|нравил\w*|хотел)\b", text):
         return "claim"
+    if re.fullmatch(r"\W*(держи|лови|вот|here|take\s+it)\W*", text) and not known_today:
+        return "claim"  # handing over something that isn't there
     if UNSURE_RE.search(text):
         return None  # already non-committal
     if PAY_RE.search(text) and (AMOUNT_RE.search(text) or MONEY_WORD_RE.search(text) or re.search(r"\d", text)):
         return "commitment"  # "50 tashay", "скину 20к"
     if RELAY_RE.search(them) and RELAY_OK_RE.search(text):
         return None  # "tell your dad…" → "ok, I'll tell him" is fine
-    if PLAN_RE.search(them) and (COMMIT_RE.search(text) or AFFIRM_RE.match(text)):
+    if PLAN_RE.search(them) and (COMMIT_RE.search(text) or AFFIRM_RE.match(text) or SOON_RE.fullmatch(text)):
         return "commitment"
-    if (DID_RE.search(them) or STATE_Q_RE.search(them)) and not known_today and not CRUDE_RE.search(them):
+    if FLAT_PROMISE_RE.search(text) and not known_today:
+        return "commitment"
+    if (DID_RE.search(them) or STATE_Q_RE.search(them) or UZ_Q_RE.search(them)) and not known_today and not CRUDE_RE.search(them) \
+            and not re.search(r"\b(понял|поняла|слышал|слышала|знал|знала|видел|видела|заметил|помнишь)\W*$", them.strip(), re.I):
         # "yes"/"no", or the question's own word handed back as the answer ("ты сделал?" — "сделал", "дома?" — "дома")
         first = re.match(r"\W*([^\W\d_]+)", text)
         asked = set(re.findall(r"[^\W\d_]{3,}", them.lower())) - {"ты", "вы", "это", "что", "как", "the", "you"}
-        if CLAIM_RE.match(text) or (first and first.group(1) in asked and "?" in them):
+        if CLAIM_RE.match(text) or re.match(r"\W*ok\W*$", text) and UZ_Q_RE.search(them) \
+                or (first and first.group(1) in asked and "?" in them):
             return "claim"
     if not known_today and C.GROUNDED:
         if WHERE_I_AM_RE.search(text):
@@ -519,5 +570,28 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
     return None
 
 
-def dodge(kind: str, language: str | None) -> str:
+WHERE_Q_RE = re.compile(r"\b(где|куда)\b|qayer\w*|qatta\w*|\bwhere\b|\bwya\b|\buyda\w*mi\w*|\bдома\s*\?|\bdoma\s*\?", re.I)
+DOING_Q_RE = re.compile(r"\b(что|чё|че|чо|чем)\s+(ты\s+)?(дела\w*|занят\w*|занима\w*)|\bch[eo]\s+dela\w+|\bchto\s+dela\w+|\bwyd\b|"
+                        r"\bwhat\s+(are\s+|r\s+)?(you|u)\s+doing|\bnima\s+qil\w+", re.I)
+ASIDE = {  # nobody says "I don't know" to "where are you" or "what are you doing"
+    "where": {"ru": ["а что?", "а чё такое?", "а что случилось?"], "en": ["why?", "why whats up"], "uz": ["nimaga?", "nima bo'ldi?"]},
+    "doing": {"ru": ["да ничего", "ничего особо", "да так"], "en": ["nm", "nothing much"], "uz": ["hech narsa", "shunchaki"]},
+}
+
+
+def agrees_late(history, them: str, draft: str, known_today: str = "") -> bool:
+    """They asked for something a message or two ago and are now only adding a detail ("на 8 утра", "ну пж"): a
+    draft that agrees now is the same promise."""
+    if known_today or "?" in them or len(them.split()) > 5 or UNSURE_RE.search(draft):
+        return False
+    before = [m.raw_text or "" for m in history if not m.out][:6]
+    asked = any(PLAN_RE.search(t) for t in before if t and t not in them)
+    return asked and bool(COMMIT_RE.search(draft.lower()) or AFFIRM_RE.match(draft.lower()))
+
+
+def dodge(kind: str, language: str | None, them: str = "") -> str:
+    last = them.strip().splitlines()[-1] if them.strip() else ""
+    aside = "where" if WHERE_Q_RE.search(last) else "doing" if DOING_Q_RE.search(last) else None
+    if aside and kind == "situation":
+        return random.choice(ASIDE[aside].get(language or "ru") or ASIDE[aside]["ru"])
     return random.choice(DODGE[kind].get(language or "ru") or DODGE[kind]["ru"])

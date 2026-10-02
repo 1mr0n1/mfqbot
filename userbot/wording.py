@@ -53,7 +53,7 @@ ADDRESSED_RE = re.compile(r"\?|\b(u|you|ur|you'?re|youre|r u|are|is this|ты|в
 
 WHO_RE = re.compile(
     r"\bwho\s+(are|r)\s+(you|u)\b|\bis\s+(this|that|it)\s+(really\s+|actually\s+)?(you|u)\b|\bare\s+(you|u)\s+(even\s+)?(real|human|a\s+(real\s+)?person)\b"
-    r"|\bты\s+кто\b|\bкто\s+ты\b|\bэто\s+(точно\s+|правда\s+|реально\s+|вообще\s+)?ты\b|\bты\s+(настоящий|реальный|человек|живой)\b"
+    r"|\bты\s+кто\b|\bкто\s+ты\b|\bэто\s+(точно\s+|правда\s+|реально\s+|вообще\s+)?ты\b(?!\s+(?!пишешь|отвечаешь|печатаешь|или|сам)[а-яё]{3,})|\bты\s+(настоящий|реальный|человек|живой)\b"
     r"|\b(sen\s+)?kimsan\b|\b(rostdan|haqiqatan)\s+(ham\s+)?senmi\b|\bsenmisan\b|\bodammisan\b", re.I)
 
 
@@ -109,7 +109,9 @@ PROBE_RE = re.compile(
     r"систем\w+\s+промпт|тво[йи]\s+(промпт|инструкци\w+)|забудь\s+(все\s+)?(правила|инструкци\w+|предыдущ\w+)|игнорируй\s+(все\s+)?(правила|инструкци\w+|предыдущ\w+)|"
     r"какая\s+у\s+тебя\s+модель|сколько\s+токенов|"
     r"(скажи|напиши|повтори|переведи|say|type|write|repeat|translate)\b.{0,40}\b(бот|bot|ии|ai|нейросеть|language\s+model)\b|"
-    r"если\s+ты\s+(бот|человек|ии)|if\s+(you|u)\s+(are|r)\s+(a\s+)?(bot|human|ai)", re.I)
+    r"если\s+ты\s+(бот|человек|ии)|if\s+(you|u)\s+(are|r)\s+(a\s+)?(bot|human|ai)|"
+    r"^\W*(ты\s+|а\s+)?(ча[тд]\s*)?(гпт|gpt|chat\s*gpt|чатгпт|нейронка|нейросеть|llm|клод|claude|deepseek|gemini|джемини|алиса)\W*$|"
+    r"developer\s+mode|режим\s+разработчика|напиши\s+сво[йи]\s+(промпт|инструкци\w+)", re.I)
 
 
 def is_identity_question(sentence: str, about_media: bool = False) -> bool:
@@ -265,7 +267,7 @@ def answer_each(several: list, parts: list[str], fixed: str | None) -> bool:
     for i, question in zip(lines, several):
         kind = judge.overreach(question.raw_text or "", parts[i], memory.today_note())
         if kind:
-            parts[i] = judge.dodge(kind, lang.base(lang.detect(question.raw_text or "")))
+            parts[i] = judge.dodge(kind, lang.base(lang.detect(question.raw_text or "")), question.raw_text or "")
     return True
 
 

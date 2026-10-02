@@ -24,6 +24,19 @@ TEACHER_RE = re.compile(r"здравствуйте|\bвы\b|\bвас\b|\bвам\
                         r"напишите|ответьте|сообщите)\b", re.I)
 
 
+# "у вас", "вы все": several people, not a polite "you"
+PLURAL_YOU_RE = re.compile(r"\bу\s+вас\b|\bвы\s+(все|оба)\b|\bвам\s+(задали|всем)\b|"
+                           r"\bвас\s+(всех|отпустили|много)\b|\bваш\w*\s+(класс\w*|школ\w*|групп\w*)\b", re.I)
+# adverts and bait from people who aren't in your contacts: no answer, and not worth an alarm either
+AD_RE = re.compile(r"продвижени\w+|раскрутк\w+|вы\s+выиграли|перейдите\s+по\s+ссылке|business\s+proposal|заработ\w+\s+(в\s+интернете|от\s+\d|до\s+\d)|"
+                   r"инвестици\w+|казино|ставки\s+на|промокод|you\s+(have\s+)?won|click\s+the\s+link|крипт\w+\s+(сигнал|заработ)\w*|"
+                   r"рекламн\w+\s+предложени\w+|pul\s+ishlash|быстрый\s+заработок|подработк\w+\s+(онлайн|от)", re.I)
+
+
+CHORE_RE = re.compile(r"(напиши|сочини|придумай|сгенерируй)\s+(мне\s+)?(стих\w*|сочинени\w*|эссе|рассказ\w*|песн\w*|код\w*|программ\w*|"
+                      r"реферат\w*|доклад\w*|рэп)|write\s+(me\s+)?(a\s+|an\s+|some\s+)?(poem|essay|story|code|song|rap)|she'r\s+yoz", re.I)
+
+
 # what people actually tap a reaction on: laughs, good news, congratulations, compliments, emoji-heavy messages
 REACTABLE_RE = re.compile(r"аха|хаха|лол|\blol\b|lmao|ура|поздрав|молодец|красав|круто|класс|супер|выиграл|получил|сдал|"
                           r"\b(nice|congrats|won|yay|let'?s go)\b|zo'?r|tabrik|[\U0001F600-\U0001F64F\U0001F389\U0001F525\u2764]", re.I)
@@ -307,12 +320,18 @@ async def reply_flow(chat_id: int, contact: User):
         identity = None if force else identity_question(history, identity_ignored.get(chat_id, 0))
         reason = (await judge.sensitive_reason(http, full_name(app.me), history, keywords_only=identity is not None)
                   if C.HANDOFF and not force else None)
+        if not reason and not force and AD_RE.search(their_text) and not getattr(contact, "contact", False) \
+                and not contact_style_path(contact) and not any(m.out for m in history):
+            log.info("%s: looks like an advert — ignored", who)
+            daylog.record("skipped", who)
+            trace.emit("decision", who, "Looks like an advert or bait from someone you don't know — ignoring it")
+            return
         if not reason and not force and judge.crisis(history):
             reason = "someone in real trouble — this needs you, now"  # regardless of the hand-off switch
         if not reason and chat_id in state.manual and not force:
             reason = "this chat is set to manual (.ai on to change)"
         if not reason and C.HANDOFF and not force and not contact_style_path(contact) \
-                and TEACHER_RE.search(their_text) and not judge.closer_action(history, state.handled.get(str(chat_id), 0)):
+                and TEACHER_RE.search(PLURAL_YOU_RE.sub(" ", their_text)) and not judge.closer_action(history, state.handled.get(str(chat_id), 0)):
             reason = "a formal message (teacher / official) — better answered by you"
         if reason:  # this one is yours: don't answer, don't even mark it read
             state.hand_off(chat_id, C.HANDOFF_HOLD)
@@ -339,6 +358,13 @@ async def reply_flow(chat_id: int, contact: User):
         asking_who = intro == people.ASK_HINT
         hint += intro
         hint += memory.sums(their_text)
+        if app.COMMAND_RE.search(their_text):
+            hint += ("\nThey typed something that looks like a command for a program (“.ai …”). To you it means nothing: "
+                     "you are not a program and nothing gets carried out. React like a puzzled person (“?”, “чё”), don't say ok or done.\n")
+        earlier = [m.raw_text or "" for m in history if not m.out][:4]
+        if CHORE_RE.search(their_text) or any(CHORE_RE.search(t) for t in earlier):
+            hint += ("\nThey want you to produce something a writing service would (a poem, an essay, code, a story). You are "
+                     "a teenager chatting, not a service: brush it off in your own words (too lazy, “сам пиши”). Don't write it.\n")
         researched = None
         if C.LOOKUP_ON and not asking_who:
             researched = await lookup.research(http, history, their_text)
@@ -512,6 +538,8 @@ async def reply_flow(chat_id: int, contact: User):
             # It must not agree to plans or claim what you did or didn't do: rewrite once, then use a neutral phrase.
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
             over = None if answer_each(several, parts, fixed) else judge.overreach(their_text, said, memory.today_note())
+            if not over and not several and judge.agrees_late(history, their_text, said, memory.today_note()):
+                over = "commitment"  # "закажи такси" … "на 8 утра" — "хорошо, закажу"
             if researched and over in ("situation", "claim"):
                 over = None  # "Белл получил патент в 1876" is the looked-up fact, not something about your own day
             if photo_msg and not pfp_failed and over == "claim":
@@ -528,7 +556,7 @@ async def reply_flow(chat_id: int, contact: User):
                 if again_said and looks_safe(again) and not judge.overreach(their_text, again_said, memory.today_note()):
                     reply, parts = again, ([fixed] if fixed else []) + again_parts
                 else:
-                    neutral = judge.dodge(over, lang.base(lang.detect(their_text)))
+                    neutral = judge.dodge(over, lang.base(lang.detect(their_text)), their_text)
                     reply, parts = neutral, ([fixed] if fixed else []) + [neutral]
                 if over == "situation":  # only you know the answer: tell you, and how to tell the account
                     spawn(app.client.send_message("me", f"❓ {who} asked something only you know:\n“{their_text[:300]}”\n"
@@ -596,6 +624,9 @@ async def reply_flow(chat_id: int, contact: User):
             if not parts:
                 trace.emit("decision", who, "Nothing new to say — not sending the same line again")
                 daylog.record("skipped", who)
+                if "?" in their_text:  # a question left hanging is yours to know about
+                    await app.client.send_message("me", f"🤷 {who} keeps asking and I have nothing new to say:\n"
+                                                    f"“{their_text[:300]}”\nThat one is yours.")
                 return
 
         # A second look before anything is sent: wrong language, nonsense words, a missed question…
@@ -667,7 +698,7 @@ async def reply_flow(chat_id: int, contact: User):
             if (researched and late in ("situation", "claim")) or (photo_msg and not pfp_failed and late == "claim"):
                 late = None
             if late:
-                neutral = judge.dodge(late, lang.base(lang.detect(their_text)))
+                neutral = judge.dodge(late, lang.base(lang.detect(their_text)), their_text)
                 trace.emit("decision", who, f"A rewrite still made a {late} (“{said[:50]}”) — sending “{neutral}” instead")
                 parts = ([fixed] if fixed else []) + [neutral]
                 reply = "\n".join(parts)

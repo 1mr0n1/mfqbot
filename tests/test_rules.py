@@ -4,6 +4,7 @@
 
 Each case is (input, expected). The names in here are made up.
 """
+import re
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -94,7 +95,34 @@ class Judge(Cases):
             ("Premium qimmat ekan", "50 tashay", "commitment"), ("у меня денег нет", "скину 20к", "commitment"),
             ("U menya", "Ha, uydaman", "situation"), ("ало", "я дома", "situation"), ("го в кс", "не, я дома посижу", None),
             ("Dali dengi emas", "300-350$ atrofida", "situation"), ("сколько стоит айфон?", "999$ вроде", None),
-            ("я купил за 300$", "300$ норм цена", None), ("как дела", "дам знать", None)])
+            ("я купил за 300$", "300$ норм цена", None), ("как дела", "дам знать", None),
+            ("Pul bormi senda", "Yo'q", "claim"), ("Uydamisan", "Ok", "claim"), ("Eshikni och", "Открываю", "commitment"),
+            ("Tezroq", "Иду уже", "commitment"), ("С кем", "Один", "situation"), ("Когда домой", "Через час", "situation"),
+            ("какая оценка", "Пять", "situation"), ("верни", "Не брал", "claim"), ("дай списать", "Держи", "claim"),
+            ("контрольная когда", "В понедельник", "situation"), ("когда у меня др", "3 сентября", "situation"),
+            ("ты обещал вернуть", "А, точно, верну завтра", "commitment"), ("когда вернёшь", "завтра", "commitment"),
+            ("верни 50к", "Вернул", "claim"), ("родителей нет", "Ок, скоро буду", "commitment"), ("что делаешь", "Дома сижу", "situation"),
+            ("ты понял?", "не понял", None), ("когда фильм выйдет", "завтра", None), ("кто выиграл ЧМ 2022", "Аргентина", None),
+            ("что делаешь", "да ничего", None), ("ты забыл", "не забыл", None)])
+
+    def test_a_dodge_fits_the_question(self):
+        self.assertIn(judge.dodge("situation", "ru", "Ты где"), judge.ASIDE["where"]["ru"])
+        self.assertIn(judge.dodge("situation", "uz", "Qayerdasan"), judge.ASIDE["where"]["uz"])
+        self.assertIn(judge.dodge("situation", "ru", "что делаешь"), judge.ASIDE["doing"]["ru"])
+        self.assertIn(judge.dodge("situation", "ru", "Когда еда приедет"), judge.DODGE["situation"]["ru"])
+
+    def test_trouble_at_home_and_debts_are_yours(self):
+        for text in ["Бабушке плохо", "Скорую вызвали", "Приезжай срочно"]:
+            self.assertTrue(judge.CRISIS_RE.search(text), text)
+        self.assertFalse(judge.CRISIS_RE.search("мне плохо от этой музыки"))
+        money = next(p for r, p in judge.STRONG if r == "money")
+        for text, want in [("сколько ты мне должен", True), ("верни 50к", True), ("верни наушники", False), ("займи место", False)]:
+            self.assertEqual(bool(re.search(money, text, re.I)), want, text)
+
+    def test_who_is_answering_is_not_confused_with_who_did_it(self):
+        for text, want in [("это ты рассказал Диме?", False), ("это ты?", True), ("это ты пишешь?", True), ("чат гпт?", True),
+                           ("это ты сделал", False), ("ты нейронка?", True)]:
+            self.assertEqual(wording.is_identity_question(text), want, text)
 
     def test_dry(self):
         dry = lambda *texts: judge.dry([msg(t) for t in reversed(texts)] + [msg("как дела?", out=True)])
