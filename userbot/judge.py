@@ -375,6 +375,9 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
                 and not any(lang._dictionary_uzbek(w) or w in lang.UZ_WORDS for w in their_words)
             if clearly_other:
                 return f"wrong language (uz instead of {their_lang})"
+        if their_lang == "en" and not their_cyrillic and len(them.split()) >= 3 and len(re.findall(r"[а-яё]{3,}", text, re.I)) >= 2 \
+                and not re.search(r"[A-Za-z]{3,}", text):
+            return "wrong language (ru instead of en)"  # an English message answered in Russian out of nowhere
         latin = re.findall(r"[A-Za-z]{3,}", text)
         a_name = bool(latin) and all(w[0].isupper() for w in latin) and len(text.split()) <= 6  # "Call of Duty Mobile"
         if draft_lang == "en" and their_lang == "ru" and their_cyrillic and not re.search("[а-яё]", text, re.I) and not a_name:
@@ -403,7 +406,7 @@ PLAN_RE = re.compile(
     r"отдашь|ждём|ждем|выходи|подойд[её]шь|переночу\w*|купи\w*|позвони\w*|забери\w*|сходи\w*|съезди\w*|приезжай\w*|"
     r"приходи\w*|заходи\w*|отнеси\w*|верни\w*|оплати\w*|закажи\w*|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
     r"\b(wanna|coming|come\s+(over|to)|meet|bring|let'?s)\b|kelasan\w*|borasan\w*|chiqasan\w*|uchrash\w*|olib\s+kel|"
-    r"\b\w{3,}(asanmi|asizmi|asilami|asila|aymi|amizmi|olasanmi)\b|\bborib\s+kel|\bkelib\s+ket|\b(bor|kel|ol|ber|ayt)(ing|gin)?\b|"
+    r"\b\w{3,}(asanmi|asizmi|asilami|asila|aymi|amizmi|olasanmi)\b|\bborib\s+kel|\bkelib\s+ket|\b(bor|kel|ol|ber|ayt)(ing|gin)?\b|\b\w{2,}(асанми|асизми|аймизми|амизми)\b|"
     r"\b(och|qil|yoz|yubor|tashla|chiq|yop|o['ʻ‘’]?chir)(ing|gin)?\b|верн[её]шь|вернуть|отдашь|отдать|верни\b", re.I)
 # a promise said flat, whatever they wrote: "скоро буду", "уже иду", "ща приду"
 FLAT_PROMISE_RE = re.compile(
@@ -417,13 +420,14 @@ COMMIT_RE = re.compile(
     r"позвоню|заберу|схожу|съезжу|отнесу|верну|оплачу|закажу|поеду|пойду|"
     r"го|погнали|заходи|выхожу|иду|еду)\b|\bв\s+\d{1,2}([:.]\d\d)?\b|\bчерез\s+(час|пол\w*|минут\w*|\d+)|\bжду\b|\b(sure|ok|okay|yeah),?\s+(do|i'?ll|will|done)\b|\b(давай|ок|окей|хорошо|да|конечно)\b[\s,]+\b(приду|буду|зайду|го|давай|помогу)\b|"
     r"\b(i'?ll\s+(come|be|bring|help)|coming|on\s+my\s+way|let'?s\s+go|sure\s+let'?s|yeah\s+let'?s|im\s+down)\b|"
-    r"\b(kelaman|boraman|chiqaman|olib\s+kelaman|xop\s+kelaman|\w{3,}(ayapman|aman|amiz|yman)|hozir\s+\w+man)\b", re.I)
+    r"\b(kelaman|boraman|chiqaman|olib\s+kelaman|xop\s+kelaman|\w{2,}(ayapman|aman|amiz|yman)|hozir\s+\w+man|[а-яёўқғҳ]{2,}(аяпман|аман|амиз))\b", re.I)
 DID_RE = re.compile(
     r"\b(сделал\w*|сдал\w*|прив[её]з(ла|ли)?|прин[её]с(ла|ли)?|подготовил\w*|написал\w*|выучил\w*|поел\w*|покушал\w*|кушал\w*|"
     r"взял\w*|купил\w*|забрал\w*|был\w*\s+(на|в|у)|ходил\w*|почему\s+(тебя|вас)\s+не\s+было)\b|"
-    r"\bdid\s+(u|you)\b|\bhave\s+(u|you)\b|\b\w{2,}(dingmi|dingizmi|ganmisan|ganmisiz|ibmi|dimi)\b", re.I)
+    r"\bdid\s+(u|you)\b|\bhave\s+(u|you)\b|\b\w+(dingmi|dingizmi|ganmisan|ganmisiz|ibmi|dimi|ganmi|дингми|дингизми|ганмисан|ганмисиз|дими|ганми)\b", re.I)
 # yes/no questions about you right now that only you can answer: "ты выпил таблетки?", "папа дома?", "температура есть?"
 STATE_Q_RE = re.compile(
+    r"\b(are|r)\s+(you|u)\s+(home|free|busy|coming|there|ready|done|awake|at\s+\w+)\b|"
     r"\bу\s+тебя\s+есть\b|\bесть\s+у\s+тебя\b|\bdo\s+(you|u)\s+have\b|\bsenda\s+\w+\s+bormi\b|"
     r"\bты\b[^?]*\b\w{2,}(ил|ал|ел|ял|ул|ыл|ёл)(а|и)?(ся|сь)?\b[^?]*\?|\b\w{2,}(ил|ал|ел|ял|ул|ыл)(а|и)?(ся|сь)?\s*\?"
     r"|\b(температура|деньги|время|еда|зарядка|ключи)\s+есть\s*\?|\bесть\s+(температура|деньги|время)\s*\?"
@@ -431,7 +435,7 @@ STATE_Q_RE = re.compile(
     r"|\b\w{3,}(mi|misan|misiz|ми|мисан|мисиз)\s*\?", re.I)
 UZ_Q_RE = re.compile(r"\b\w{3,}(misan|misiz|мисан|мисиз)\b|\b[a-z'ʻ‘’]{3,}mi\b(?!\s*-)", re.I | re.M)
 CLAIM_RE = re.compile(r"^\W*(?:(?:а|ну|э+|хм+|не)\W+)?(да|нет|нету|есть|не|неа|ага|угу|ещё\s+нет|еще\s+нет|пока\s+нет|уже|yes|yeah|yep|no|nope|nah|not\s+yet|"
-                      r"ha|haa|yo['ʻ‘’]?q|yoq|xa|ха|йўқ|йук|ҳа|hali\s+yo['ʻ‘’]?q|"
+                      r"ha|haa|yo['ʻ‘’]?q|yoq|xa|ха|йўқ|йук|йок|ҳа|hali(\s+yo['ʻ‘’]?q)?|hozircha(\s+yo['ʻ‘’]?q)?|хали|ҳали|\w+,\s*yo['ʻ‘’]?q|"
                       r"\w{2,}(dim|madim|ganman|maganman))\b", re.I)
 AFFIRM_RE = re.compile(r"^\W*(да|ага|угу|ок|окей|оке\w*|хорошо|конечно|давай|го|погнали|sure|yeah|yes|yep|ok|okay|bet|"
                        r"mayli|xop|ha)\b", re.I)
@@ -492,6 +496,7 @@ WHERE_I_AM_RE = re.compile(
     r"|^\W*(?:(?:да|ага|ну)\W+)?(?:я\s+)?(дома|doma)\b(?!\s+(посижу|останусь|буду|был|не\b|никого|нет\b))"
     r"|\bya\s+doma\b|^\W*(уйда|uyda)\b|\bjust\s+got\s+home\b|\bi'?m\s+(at\s+)?home\b|\bтолько\s+(пришёл|пришел|зашёл|зашел)\b"
     r"|\b(дома\s+(сижу|лежу|валяюсь)|(сижу|лежу|валяюсь)\s+дома|doma\s+si[dzj]\w+)\b"
+    r"|\b(уйда|мактабда|дарсда|йўлда|кўчада)ман\b|^\W*(i'?m\s+)?(at\s+)?home\W*$"
     r"|\b(uyda|maktabda|darsda|yo['ʻ‘’]?lda|ko['ʻ‘’]?chada|ishda)man\b|^\W*(?:(?:yes|yeah|yep)\W+)?i'?m\s+(at\s+)?(home|school)\W*$", re.I)
 # an amount of money: "50$", "300-350$", "275.000 сум", "20к"
 AMOUNT_RE = re.compile(r"\$\s?\d+|\d[\d.,\s-]*\s?(\$|usd|сум\w*|so['ʻ‘’]?m|sum\b|ming\b|тыс\w*|руб\w*|доллар\w*|бакс\w*|[кk]\b)", re.I)
@@ -501,7 +506,7 @@ PAY_RE = re.compile(r"\b(скину|кину|переведу|отправлю|�
 MONEY_WORD_RE = re.compile(r"деньг|денег|бабк|бабл|\bpul\w*|\bmoney\b|\bcash\b", re.I)
 
 
-BOUNCE_RE = re.compile(r"^\W*(а\s+)?(у\s+тебя|ты|тебе|тво[йяёе]|and\s+(you|u)|urs|yours|sen-?chi|o['ʻ‘’]?zing(-?chi)?)\W*$", re.I)
+BOUNCE_RE = re.compile(r"^\W*(а\s+)?(у\s+тебя|ты|тебе|тво[йяёе]|and\s+(you|u)|you|u|wbu|hbu|urs|yours|sen-?chi|o['ʻ‘’]?zing(-?chi)?)\W*$", re.I)
 
 
 def _in_facts(draft: str, them: str) -> bool:
@@ -554,7 +559,7 @@ def overreach(them: str, draft: str, known_today: str = "", heard: str = "") -> 
     if re.fullmatch(r"\W*(держи|лови|вот|here|take\s+it)\W*", text) and not known_today:
         return "claim"  # handing over something that isn't there
     if not known_today and (DID_RE.search(them) or STATE_Q_RE.search(them)) and not CRUDE_RE.search(them) and re.match(
-            r"^\W*(ещё\s+нет|еще\s+нет|пока\s+нет|да|нет|уже|ага|угу|yes|yeah|no|nope|not\s+yet|ha|yo['ʻ‘’]?q)\b"
+            r"^\W*(ещё\s+нет|еще\s+нет|пока\s+нет|да|нет|уже|ага|угу|yes|yeah|no|nope|not\s+yet|ha|yo['ʻ‘’]?q|hozircha\s+yo['ʻ‘’]?q|hali\s+yo['ʻ‘’]?q)\b"
             r"(?!\W*(не\s+знаю|не\s+помню|наверн\w*|вроде|может|idk))", text) \
             and not re.search(r"\b(понял|поняла|слышал|слышала|знал|знала|видел|видела|заметил|помнишь)\W*$", them.strip(), re.I):
         return "claim"  # "ещё нет, позвоню позже"
@@ -591,9 +596,10 @@ def overreach(them: str, draft: str, known_today: str = "", heard: str = "") -> 
     return None
 
 
-WHERE_Q_RE = re.compile(r"\b(где|куда|gde|kuda)\b|qayer\w*|qatta\w*|\bwhere\b|\bwya\b|\buyda\w*mi\w*|\bдома\s*\?|\bdoma\s*\?", re.I)
+WHERE_Q_RE = re.compile(r"\b(где|куда|gde|kuda|home)\b|\b(uyda|уйда)\w*|qayer\w*|qatta\w*|\bwhere\b|\bwya\b|\buyda\w*mi\w*|\bдома\s*\?|\bdoma\s*\?", re.I)
 DOING_Q_RE = re.compile(r"\b(что|чё|че|чо|чем)\s+(ты\s+)?(дела\w*|занят\w*|занима\w*)|\bch[eo]\s+dela\w+|\bchto\s+dela\w+|\bwyd\b|"
-                        r"\bwhat\s+(are\s+|r\s+)?(you|u)\s+doing|\bnima\s+qil\w+", re.I)
+                        r"\bwhat\s+(are\s+|r\s+)?(you|u)\s+(doing|up\s+to)|\bnima\s+qil\w+|\bnima\s+gap|\bнима\s+гап|\bqale\w*|\bкак\s+дела|\bчё\s+как|"
+                        r"\bwhat'?s\s+up\b|\bsup\b|\bwassup\b", re.I)
 ASIDE = {  # nobody says "I don't know" to "where are you" or "what are you doing"
     "where": {"ru": ["а что?", "а чё такое?", "а что случилось?"], "en": ["why?", "why whats up"], "uz": ["nimaga?", "nima bo'ldi?"]},
     "doing": {"ru": ["да ничего", "ничего особо", "да так"], "en": ["nm", "nothing much"], "uz": ["hech narsa", "shunchaki"]},

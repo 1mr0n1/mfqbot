@@ -43,7 +43,8 @@ CHORE_RE = re.compile(r"(напиши|сочини|придумай|сгенер
 
 
 CHORE_HINT = ("\nThey want you to produce something a writing service would (a poem, an essay, code, a story). You are "
-              "a teenager chatting, not a service: brush it off in your own words (too lazy, “сам пиши”). Don't write it.\n")
+              "a teenager chatting, not a service: brush it off in a few words of your own, in the language they wrote in "
+              "(too lazy, do it yourself) — and keep refusing if they insist. Don't write it.\n")
 
 
 # what people actually tap a reaction on: laughs, good news, congratulations, compliments, emoji-heavy messages
@@ -568,7 +569,7 @@ async def reply_flow(chat_id: int, contact: User):
                         and not judge.agrees_late(history, their_text, again_said, memory.today_note()):
                     reply, parts = again, ([fixed] if fixed else []) + again_parts
                 else:
-                    neutral = judge.dodge(over, lang.base(lang.detect(their_text)), their_text)
+                    neutral = judge.dodge(over, lang.spoken(history, their_text), their_text)
                     reply, parts = neutral, ([fixed] if fixed else []) + [neutral]
                 if over == "situation":  # only you know the answer: tell you, and how to tell the account
                     spawn(app.client.send_message("me", f"❓ {who} asked something only you know:\n“{their_text[:300]}”\n"
@@ -711,7 +712,7 @@ async def reply_flow(chat_id: int, contact: User):
             if (researched and late in ("situation", "claim")) or (photo_msg and not pfp_failed and late == "claim"):
                 late = None
             if late:
-                neutral = judge.dodge(late, lang.base(lang.detect(their_text)), their_text)
+                neutral = judge.dodge(late, lang.spoken(history, their_text), their_text)
                 trace.emit("decision", who, f"A rewrite still made a {late} (“{said[:50]}”) — sending “{neutral}” instead")
                 parts = ([fixed] if fixed else []) + [neutral]
                 reply = "\n".join(parts)

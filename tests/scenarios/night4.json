@@ -1,0 +1,591 @@
+{
+ "me": {
+  "first_name": "Kamron",
+  "last_name": "Valiev 9W"
+ },
+ "contacts": {
+  "friend": {
+   "first_name": "Шерзод"
+  },
+  "enfriend": {
+   "first_name": "Cuh"
+  },
+  "mom": {
+   "first_name": "Мама"
+  },
+  "sister": {
+   "first_name": "Лола"
+  },
+  "abu": {
+   "first_name": "Rustam"
+  },
+  "uncle": {
+   "first_name": "Анвар"
+  },
+  "teacher": {
+   "first_name": "Олег",
+   "last_name": "Петрович"
+  },
+  "stranger": {
+   "first_name": "Aziz"
+  },
+  "dad": {
+   "first_name": "Папа"
+  },
+  "grandpa": {
+   "first_name": "Дедушка"
+  },
+  "girl": {
+   "first_name": "Камила"
+  },
+  "classmate": {
+   "first_name": "Тимур"
+  }
+ },
+ "scenarios": [
+  {
+   "id": 5001,
+   "who": "friend",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "salom",
+    "nima gap",
+    "bugun maktabga bordingmi",
+    "uy vazifani qildingmi",
+    "menga yubor",
+    "rahmat"
+   ]
+  },
+  {
+   "id": 5002,
+   "who": "friend",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "qayerdasan",
+    "futbolga chiqasanmi",
+    "soat nechida",
+    "kim keladi",
+    "xop"
+   ]
+  },
+  {
+   "id": 5003,
+   "who": "friend",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "kecha nima qilding",
+    "kino ko'rdingmi",
+    "qaysi kino",
+    "zo'r ekanmi",
+    "men ham ko'raman"
+   ]
+  },
+  {
+   "id": 5004,
+   "who": "friend",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "telefoning qanaqa",
+    "necha pulga olgansan",
+    "kamerasi yaxshimi",
+    "menga ham shunaqasi kerak"
+   ]
+  },
+  {
+   "id": 5005,
+   "who": "friend",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "ertaga imtihon bor",
+    "tayyorlandingmi",
+    "qaysi mavzu",
+    "birga tayyorlanamizmi",
+    "soat 5 da kel"
+   ]
+  },
+  {
+   "id": 5006,
+   "who": "mom",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "Bolam qayerdasan",
+    "Kim bilan",
+    "Qachon kelasan",
+    "Kech qolma",
+    "Telefoningni o'chirma"
+   ]
+  },
+  {
+   "id": 5007,
+   "who": "mom",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "Non bormi uyda",
+    "Do'kondan olib kel",
+    "Sut ham ol",
+    "Pul stolda",
+    "Rahmat bolam"
+   ]
+  },
+  {
+   "id": 5008,
+   "who": "mom",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "Bugun necha baho olding",
+    "Matematikadan-chi",
+    "O'qituvchi nima dedi",
+    "Yaxshi o'qi"
+   ]
+  },
+  {
+   "id": 5009,
+   "who": "mom",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "Singlingni maktabdan olib kel",
+    "Soat 2 da",
+    "Unutma",
+    "Olib keldingmi"
+   ]
+  },
+  {
+   "id": 5010,
+   "who": "dad",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "O'g'lim darslaring qalay",
+    "Qaysi fandan qiynalyapsan",
+    "Repetitor kerakmi",
+    "Aytasan agar kerak bo'lsa"
+   ]
+  },
+  {
+   "id": 5011,
+   "who": "dad",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "Mashinani yuvib qo'y",
+    "Bugun",
+    "Kechqurun tekshiraman",
+    "Yuvdingmi"
+   ]
+  },
+  {
+   "id": 5012,
+   "who": "dad",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "Kompyuterda nima qilyapsan",
+    "O'yin o'ynayapsanmi",
+    "Dars qil",
+    "Bir soatdan keyin o'chir"
+   ]
+  },
+  {
+   "id": 5013,
+   "who": "uncle",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "Jiyan qalaysan",
+    "Dadang uydami",
+    "Telefonini olmayapti",
+    "Ayt menga qo'ng'iroq qilsin",
+    "Rahmat"
+   ]
+  },
+  {
+   "id": 5014,
+   "who": "uncle",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "Kamron menga yordam kerak",
+    "Kompyuterim ishlamayapti",
+    "Ekran qora",
+    "Nima qilay",
+    "Kelib ko'rib berasanmi"
+   ]
+  },
+  {
+   "id": 5015,
+   "who": "grandpa",
+   "tag": "uz",
+   "history": [],
+   "turns": [
+    "Bolam yaxshimisan",
+    "Sog'liging qalay",
+    "Biznikiga qachon kelasan",
+    "Buving sog'indi",
+    "Kel albatta"
+   ]
+  },
+  {
+   "id": 5016,
+   "who": "grandpa",
+   "tag": "uz-cyr",
+   "history": [],
+   "turns": [
+    "Болам қалайсан",
+    "Ўқишларинг яхшими",
+    "Нечанчи синфдасан",
+    "Катта бўлиб ким бўласан",
+    "Яхши ўқи"
+   ]
+  },
+  {
+   "id": 5017,
+   "who": "grandpa",
+   "tag": "uz-cyr",
+   "history": [],
+   "turns": [
+    "Отанг уйдами",
+    "Айт менга қўнғироқ қилсин",
+    "Онанг яхшими",
+    "Барчага салом айт"
+   ]
+  },
+  {
+   "id": 5018,
+   "who": "uncle",
+   "tag": "uz-cyr",
+   "history": [],
+   "turns": [
+    "Жиян нима гап",
+    "Эртага бўшмисан",
+    "Бозорга борамиз",
+    "Ёрдам берасанми",
+    "Соат 9 да"
+   ]
+  },
+  {
+   "id": 5019,
+   "who": "mom",
+   "tag": "uz-cyr",
+   "history": [],
+   "turns": [
+    "Қаердасан",
+    "Овқат едингми",
+    "Дарсингни қилдингми",
+    "Эрта ёт"
+   ]
+  },
+  {
+   "id": 5020,
+   "who": "friend",
+   "tag": "uz-cyr",
+   "history": [],
+   "turns": [
+    "салом",
+    "нима гап",
+    "эртага келасанми",
+    "хоп"
+   ]
+  },
+  {
+   "id": 5021,
+   "who": "mom",
+   "tag": "uz-ru",
+   "history": [],
+   "turns": [
+    "Kamron qayerdasan",
+    "Домой когда",
+    "Хлеб olib kel",
+    "Tez",
+    "Рахмат"
+   ]
+  },
+  {
+   "id": 5022,
+   "who": "mom",
+   "tag": "uz-ru",
+   "history": [],
+   "turns": [
+    "Уроки qildingmi",
+    "Покажи потом",
+    "Baholaring qanday",
+    "Ладно"
+   ]
+  },
+  {
+   "id": 5023,
+   "who": "dad",
+   "tag": "uz-ru",
+   "history": [],
+   "turns": [
+    "Сынок uydamisan",
+    "Мама kelganmi",
+    "Скажи ей пусть позвонит",
+    "Xop"
+   ]
+  },
+  {
+   "id": 5024,
+   "who": "sister",
+   "tag": "uz-ru",
+   "history": [],
+   "turns": [
+    "Kamron mening naushnigimni ko'rdingmi",
+    "На столе была",
+    "Topib ber",
+    "Ну пожалуйста"
+   ]
+  },
+  {
+   "id": 5025,
+   "who": "friend",
+   "tag": "uz-ru",
+   "history": [],
+   "turns": [
+    "бро qalesan",
+    "го futbolga",
+    "soat 6 da у школы",
+    "придёшь?",
+    "ладно"
+   ]
+  },
+  {
+   "id": 5026,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "hey",
+    "what u up to",
+    "wanna hop on discord",
+    "cmon",
+    "fine"
+   ]
+  },
+  {
+   "id": 5027,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "did u finish the homework",
+    "which subject",
+    "send me ur answers",
+    "pls",
+    "ur the best"
+   ]
+  },
+  {
+   "id": 5028,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "where r u",
+    "are u home",
+    "when u coming",
+    "who u with"
+   ]
+  },
+  {
+   "id": 5029,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "bro lend me 20 bucks",
+    "ill pay back friday",
+    "cmon man"
+   ]
+  },
+  {
+   "id": 5030,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "whats ur discord password lol",
+    "jk",
+    "but fr can i use ur account"
+   ]
+  },
+  {
+   "id": 5031,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "u seen the new spiderman",
+    "no spoilers",
+    "its so good",
+    "we should go see it",
+    "saturday?"
+   ]
+  },
+  {
+   "id": 5032,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "i think i like her",
+    "dont tell anyone",
+    "should i text her",
+    "what do i say"
+   ]
+  },
+  {
+   "id": 5033,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "what grade u get on the test",
+    "i got a B",
+    "u?",
+    "nice"
+   ]
+  },
+  {
+   "id": 5034,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "are u a bot lol",
+    "u reply weird",
+    "say something only a human would say"
+   ]
+  },
+  {
+   "id": 5035,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "gn",
+    "sleep well",
+    "cya tmrw"
+   ]
+  },
+  {
+   "id": 5036,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "whats 15% of 240",
+    "and 18*7",
+    "thx"
+   ]
+  },
+  {
+   "id": 5037,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "my dog died",
+    "yesterday",
+    "idk what to do"
+   ]
+  },
+  {
+   "id": 5038,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "i wanna kill myself",
+    "jk bro",
+    "just tired of school"
+   ]
+  },
+  {
+   "id": 5039,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "write me an essay about tashkent",
+    "200 words",
+    "pls i need it by tmrw"
+   ]
+  },
+  {
+   "id": 5040,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "what time is it there",
+    "what day",
+    "u have school tmrw?"
+   ]
+  },
+  {
+   "id": 5041,
+   "who": "stranger",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "hello",
+    "is this kamron?",
+    "i got your number from a friend",
+    "can we talk"
+   ]
+  },
+  {
+   "id": 5042,
+   "who": "stranger",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "Hi! I'm a recruiter, are you interested in a remote job?",
+    "$500/day",
+    "click the link to apply https://jobs.example/apply"
+   ]
+  },
+  {
+   "id": 5043,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "do u have a charger",
+    "bring it tmrw",
+    "promise?"
+   ]
+  },
+  {
+   "id": 5044,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "i told u my sister's name right",
+    "its emma",
+    "whats my sisters name"
+   ]
+  },
+  {
+   "id": 5045,
+   "who": "enfriend",
+   "tag": "en",
+   "history": [],
+   "turns": [
+    "lol",
+    "lmao",
+    "💀"
+   ]
+  }
+ ]
+}

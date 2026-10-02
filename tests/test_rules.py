@@ -118,6 +118,21 @@ class Judge(Cases):
             ("Сынок ты маме позвонил?", "Ещё нет, позвоню позже", "claim"), ("а по истории тест когда", "В субботу вроде", "situation"),
             ("ты уроки сделал?", "нет, не знаю когда сделаю", None), ("Xop mayli", "Xop", None)])
 
+    def test_uzbek_and_english_claims(self):
+        self.check(lambda them, draft: judge.overreach(them, draft, ""), [
+            ("uy vazifani qildingmi", "Hozircha yo'q, keyin qilaman", "claim"), ("Non bormi uyda", "Non, yo'q", "claim"),
+            ("Овқат едингми", "Ха", "claim"), ("Дарсингни қилдингми", "Хали", "claim"), ("are u home", "Yes", "claim"),
+            ("what u up to", "At home", "situation"), ("Қаердасан", "Уйдаман", "situation"),
+            ("Sut ham ol", "Yaxshi, ertaga ikkalasini ham olaman", "commitment"), ("qalesan", "Yaxshi, o'zing?", None),
+            ("are u ok", "yeah", None), ("nima gap", "hech narsa", None)])
+
+    def test_a_fixed_line_is_in_the_language_of_the_chat(self):
+        m = lambda t, out=False: NS(raw_text=t, out=out)
+        self.assertEqual(lang.spoken([m("Tez"), m("Xleb olib kel"), m("Qachon kelasan"), m("Kamron qayerdasan")], "Tez"), "uz")
+        self.assertEqual(lang.spoken([m("Kech qolma"), m("Qachon kelasan"), m("Bolam qayerdasan")], "Kech qolma"), "uz")
+        self.assertEqual(lang.spoken([m("ты где")], "ты где"), "ru")
+        self.assertEqual(lang.spoken([m("ok")], "ok"), "en")
+
     def test_agreeing_a_message_later_is_still_a_promise(self):
         m = lambda t, out=False: NS(raw_text=t, out=out)
         late = lambda them, draft, *before: judge.agrees_late([m(them)] + list(before), them, draft)

@@ -206,3 +206,17 @@ def detect(text: str) -> str | None:
 
 def base(code: str | None) -> str | None:
     return code.split("-")[0] if code else None
+
+
+def spoken(history, their_text: str) -> str | None:
+    """The language to answer in when a fixed line is needed: the one they just wrote in — unless the message is too
+    short to tell ("Tez", "Dadang uydami"), then the one they have been writing in."""
+    now = base(detect(their_text))
+    if len(their_text.split()) >= 2 and (now == "uz" or now == "ru" and re.search("[а-яё]", their_text, re.I)):
+        return now
+    from collections import Counter
+    earlier = Counter(code for code in (base(detect(m.raw_text or "")) for m in history[:12] if not m.out) if code)
+    if not earlier or len(their_text.split()) >= 4:
+        return now
+    usual, count = earlier.most_common(1)[0]
+    return usual if count >= 2 or now is None else now
