@@ -933,12 +933,13 @@ _TIME = (r"(?:(?:через\s+(?:\d+\s*)?\S+|в\s+\d{1,2}(?:[:.]\d\d)?(?:\s+(?:�
 _MORE_VERBS = r"исправь|отредактируй|достань|сними|сделай|позвони|набери|передай|верни|call"
 ORDER_RE = re.compile(
     rf"^\W*{_LEAD}{_TIME}(?:{_VERBS}|{_MORE_VERBS})\b"
-    rf"|^\W*{_LEAD}(?:ты\s+)?(?:должен|надо|нужно|можешь|сможешь|can\s+you|could\s+you|i\s+want\s+you\s+to|хочу\s+чтобы\s+ты)\s+(?:\w+\s+){{0,3}}?(?:{_INFINITIVES}|{_VERBS})\b"
+    rf"|^\W*{_LEAD}(?:ты\s+|я\s+)?(?:должен|надо|нужно|можешь|сможешь|can\s+you|could\s+you|i\s+want\s+you\s+to|хочу\s+чтобы\s+ты)\s+(?:\w+\s+){{0,3}}?(?:{_INFINITIVES}|{_VERBS})\b"
     r"|^\W*(?:кто|что|чё|че)\s+(?:мне\s+)?(?:писал\w*|пиш[еу]т)\b|^\W*(?:кто|что|чё|че)\s+мне\s+(?:написал|прислал|скинул)\w*"
     r"|^\W*(?:что|чё|че)\s+(?:написал|прислал|скинул)\w*\s+\w+"
     r"|^\W*(?:что|чё|че)\s+(?:там\s+)?\S+\s+пиш[еу]т\b"
     r"|^\W*(?:who|what)\s+(?:did\s+\w+\s+)?(?:wrote|write|texted|sent|send)\b|непрочитанн|unread\b"
     rf"|^\W*{_LEAD}скажи\s+\S+\s+(?:что|пусть|чтобы|чтоб)\b"                      # "скажи сестре пусть…" (not "скажи шутку")
+    r"|^\W*(?:я\s+)?хочу\s*,?\s+чтобы\s+ты\s+\w+(?:л|ла|ли)\b"                    # "я хочу чтобы ты написал маме"
     r"|^\W*не\s+(?:отвечай|пиши)\s+\S+"                                           # "не отвечай маме, я сам"
     r"|^\W*(?:какие\s+(?:есть\s+)?(?:клипы|голосовые)|список\s+клипов)"
     r"|\b(?:постав\w*|смени\w*|поменя\w*|удали\w*|убери\w*)\b.*\b(?:ав[ауы]|аватар\w*)\b|\bна\s+ав[ауы]\b",   # the avatar, however it is put
@@ -946,7 +947,10 @@ ORDER_RE = re.compile(
 
 
 def is_order(text: str) -> bool:
-    return bool(ORDER_RE.search(text or ""))
+    """An order, by its wording — or by being one of the shapes the rules understand ("скажи Тимуру привет", "пауза")."""
+    if re.match(r"^\W*(?:я|он|она|мы|они)\s+(?:уже\s+|вчера\s+|сегодня\s+)?\w+(?:л|ла|ли|лся|лась)\b", text or "", re.I):
+        return False  # "я поставил новую аву", "он удалил чат": telling, not ordering
+    return bool(ORDER_RE.search(text or "")) or bool(quick.plan(text or ""))
 
 
 CHAT_OPTION = ('  {"chat": true}   if the message is NOT an order to do something in Telegram — just conversation, a question '

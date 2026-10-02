@@ -576,7 +576,7 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
     return None
 
 
-WHERE_Q_RE = re.compile(r"\b(где|куда)\b|qayer\w*|qatta\w*|\bwhere\b|\bwya\b|\buyda\w*mi\w*|\bдома\s*\?|\bdoma\s*\?", re.I)
+WHERE_Q_RE = re.compile(r"\b(где|куда|gde|kuda)\b|qayer\w*|qatta\w*|\bwhere\b|\bwya\b|\buyda\w*mi\w*|\bдома\s*\?|\bdoma\s*\?", re.I)
 DOING_Q_RE = re.compile(r"\b(что|чё|че|чо|чем)\s+(ты\s+)?(дела\w*|занят\w*|занима\w*)|\bch[eo]\s+dela\w+|\bchto\s+dela\w+|\bwyd\b|"
                         r"\bwhat\s+(are\s+|r\s+)?(you|u)\s+doing|\bnima\s+qil\w+", re.I)
 ASIDE = {  # nobody says "I don't know" to "where are you" or "what are you doing"

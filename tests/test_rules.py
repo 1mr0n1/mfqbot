@@ -183,7 +183,10 @@ class Owner(Cases):
             ("расскажи смешной факт", False), ("кто написал войну и мир", False), ("Ну да", False),
             ("Зайди в группу по ссылке", True), ("Напиши дядям, что они молодцы", True), ("бот, удали чат с Тимуром", True),
             ("Ты должен перейти по этой ссылке и вступить в группу", True), ("что писала мама?", True), ("кто мне писал?", True),
-            ("can you send Timur hi", True), ("ну давай удали последнее сообщение", True)])
+            ("can you send Timur hi", True), ("ну давай удали последнее сообщение", True),
+            ("скажи Тимуру привет", True), ("пауза", True), ("в архив Poco", True), ("я хочу чтобы ты написал маме", True),
+            ("я поставил новую аву", False), ("он удалил чат", False), ("скажи честно ты лох", False), ("пауза затянулась", False),
+            ("мама написала что придёт", False), ("скажи спасибо", False)])
 
     def test_avatar_phrases(self):
         wants = lambda t: bool(commands.AVATAR_RE.search(t) and not commands.NOT_AVATAR_RE.search(t))
