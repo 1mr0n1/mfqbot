@@ -117,6 +117,13 @@
   <div id="drafts"></div>
   <div class="empty" id="nodrafts">Nothing queued. Drafts appear here before they're sent.</div>
 
+  <h2>Tell the account what to do</h2>
+  <div class="hint">Plain words, any language: "write Timur I'll be at 5", "what did mom write today?", "mute the class group for 8 hours". The steps and the result show up in the decision log (chat "Pilot") and in Saved Messages. Deleting, blocking, leaving and the like wait for your Yes.</div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap">
+    <input type="text" id="order" placeholder="What should happen in Telegram?" style="flex:1; min-width:200px">
+    <button class="primary" id="orderdo">Do it</button><button id="orderyes">Yes</button><button id="orderno">No</button>
+  </div>
+
   <h2>Settings</h2>
   <div class="hint">Switches take effect right away and are remembered after a restart.</div>
   <div class="toggles" id="toggles"><div class="empty" style="grid-column:1 / -1">Settings appear once the userbot is connected.</div></div>
@@ -166,6 +173,13 @@ async function post(url, body) {
   return api(url, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body || {})});
 }
 function command(type, extra) { return post("/admin/commands", Object.assign({type}, extra || {})); }
+
+/* ---------- orders ---------- */
+function order(text) { if (text.trim()) command("do", {text: text.trim()}); }
+$("orderdo").addEventListener("click", () => { order($("order").value); $("order").value = ""; });
+$("order").addEventListener("keydown", e => { if (e.key === "Enter") $("orderdo").click(); });
+$("orderyes").addEventListener("click", () => order("yes"));
+$("orderno").addEventListener("click", () => order("no"));
 
 /* ---------- drafts ---------- */
 function addDraft(e) {

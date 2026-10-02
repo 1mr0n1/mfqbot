@@ -32,6 +32,7 @@ import logging
 import random
 import re
 import time
+from types import SimpleNamespace
 from datetime import datetime, timedelta
 
 import httpx
@@ -40,7 +41,7 @@ from telethon.tl.types import ReactionEmoji, User
 
 from . import config as C
 from . import daylog, judge, lang, media, memory, pfp, punct, quirks, recall, rhythm, salam, toggles, voice
-from . import trace
+from . import pilot, trace
 from .autoprofile import bio_loop
 from .state import State
 
@@ -986,7 +987,7 @@ async def reply_flow(chat_id: int, contact: User):
 @client.on(events.NewMessage(outgoing=True, pattern=r"^\.ai(?:\s+(\w+))?(?:\s+(@?[\w.-]+))?\s*$"))
 async def on_command(event):
     arg = (event.pattern_match.group(1) or "status").lower()
-    if arg in PROFILE_COMMANDS or arg in ("note", "today"):
+    if arg in PROFILE_COMMANDS or arg in ("note", "today", "do"):
         return  # handled by on_profile_command / on_note_command / on_today_command
     tag = (event.pattern_match.group(2) or "").lower()
     chat_id = event.chat_id
@@ -1090,6 +1091,54 @@ async def on_command(event):
 
 
 PROFILE_COMMANDS = {"name", "surname", "bio", "photo", "profile"}
+
+
+async def send_as_bot(chat_id: int, text: str, **kwargs):
+    """A text sent by the account itself (not typed by you): recorded so it isn't mistaken for you stepping in."""
+    our_texts.setdefault(chat_id, []).append(text)
+    msg = await client.send_message(chat_id, text, **kwargs)
+    our_ids.add(msg.id)
+    state.record_sent(chat_id, msg.id)
+    return msg
+
+
+def set_chat_mode(chat_id: int, mode: str):
+    if mode == "off":
+        state.disable(chat_id)
+        state.manual.discard(chat_id)
+        state.save()
+        cancel(chat_id)
+    elif mode == "manual":
+        state.set_manual(chat_id)
+        cancel(chat_id)
+    else:
+        state.disabled.discard(chat_id)
+        state.manual.discard(chat_id)
+        state.save()
+
+
+pilot_busy = asyncio.Lock()
+
+
+async def operate(order: str, here: int | None = None):
+    """An order in plain words → the account carries it out (see pilot.py); the report goes to Saved Messages."""
+    async with pilot_busy:
+        ctx = SimpleNamespace(client=client, http=http, state=state, me=me, send=send_as_bot, set_mode=set_chat_mode)
+        try:
+            report = await pilot.run(ctx, order, here)
+        except Exception:
+            log.exception("Pilot failed on %r", order)
+            report = f"🛠 {order}\n⚠️ that failed (see the userbot log)"
+            trace.emit("warning", "Pilot", "The order failed (see the userbot log)")
+    await client.send_message("me", report)
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+do\s+(.+)$"))
+async def on_do_command(event):
+    """`.ai do <anything>`: operate the account in plain words. Typed in a chat, that chat is "here"."""
+    order, here = event.pattern_match.group(1).strip(), event.chat_id
+    await event.delete()
+    spawn(operate(order, here))
 
 
 @client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+today(?:\s+(.+))?$"))
@@ -1429,6 +1478,8 @@ async def run_command(cmd: dict):
         state.set_approve(cmd.get("value") == "on")
         trace.emit("system", "", "Approve-before-sending is ON: every draft waits for you" if state.approve
                    else "Approve-before-sending is OFF: drafts send by themselves")
+    elif kind == "do" and cmd.get("text", "").strip():
+        spawn(operate(cmd["text"].strip()))
     elif chat_id is None:
         trace.emit("warning", name, "Dashboard action ignored — I don't know that chat yet")
     elif kind == "history":
