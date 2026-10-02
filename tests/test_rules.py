@@ -256,7 +256,23 @@ class LateAdditions(Cases):
             ("удали аву", [("remove_avatar", {"which": "current"})]),
             ("change my first name to Kam", [("set_profile", {"first_name": "Kam"})]),
             ("напиши Тимуру привет и закрепи это", None),              # two orders: the model sorts out the sequence
-            ("что писала мама?", None), ("зайди в канал @durov", None), ("отправь стикер 😂 Азизу", None)])
+            ("что писала мама?", None), ("зайди в канал @durov", None), ("отправь стикер 😂 Азизу", None),
+            # a thing to send is not words to type; a time is not a name; "him", "everyone", "something" are not chats
+            ("отправь Азизу фото", None), ("напиши Тимуру через час что я вышел", None), ("напиши Тимуру завтра в 8 утра с др", None),
+            ("напиши мне что ты думаешь", None), ("напиши что-нибудь Камиле", None), ("заблокируй его", None), ("замуть всех", None),
+            ("выйди из всех групп", None), ("write a poem", None), ("скажи как дела у Тимура", None),
+            ("напиши Bobur Aliev здравствуйте", None), ("напиши Тимуру, Азизу: го в футбол", None),
+            ("перешли последнее сообщение от мамы папе", None),
+            ("напиши в класс \"домашку скиньте\"", [("send_message", {"chat": "класс", "text": "домашку скиньте"})]),
+            ("отправь Тимуру голосовое смех", [("send_voice", {"chat": "Тимуру", "tag": "смех"})]),
+            ("отправь клип \"смех гафурова\" в Др", [("send_voice", {"chat": "Др", "tag": "смех гафурова"})]),
+            ("напиши Тимуру и Азизу что я опоздаю", [("send_message", {"chat": "Тимуру", "text": "я опоздаю"}),
+                                                     ("send_message", {"chat": "Азизу", "text": "я опоздаю"})]),
+            ("забань Диму и Азиза", [("block", {"user": "Диму"}), ("block", {"user": "Азиза"})]),
+            ("бот, замуть класс на час", [("mute", {"chat": "класс", "hours": 1})]),
+            ("замуть класс на полчаса", [("mute", {"chat": "класс", "hours": 0.5})]),
+            ("напиши сюда привет", [("send_message", {"chat": "here", "text": "привет"})]),
+            ("убери фамилию", [("set_profile", {"last_name": ""})]), ("clear my bio", [("set_profile", {"bio": ""})])])
 
     def test_promise_to_come_back(self):
         said = lambda t: bool(replies.DEFER_RE.search(t))
