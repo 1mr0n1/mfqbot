@@ -334,8 +334,8 @@ async def own_photo_to_avatar(event) -> bool:
     return True
 
 
-SAVE_CLIP_RE = re.compile(r"^\W*(?:сохрани|запиши|save)\b(?:\s+(?:это|голос\w*|кружок|clip|this|it))?(?:\s+(?:как|as))?\s*[:\-]?\s*"
-                          r"(?P<tag>[^\W\d_][\w-]{1,24})\W*$", re.I)
+SAVE_CLIP_RE = re.compile(r"^\W*(?:сохрани|запиши|save)\b(?:\s+(?:это|его|е[её]|голос\w*|войс|кружок|clip|voice|this|it))*(?:\s+(?:как|as))?\s*[:\-]?\s*"
+                          r"[\"«“'‘]?(?P<tag>[^\W\d_][^\"«»“”'‘’\n]{1,38}?)[\"»”'’]?\W*$", re.I)
 
 
 async def teach(event) -> bool:
@@ -375,7 +375,7 @@ async def save_clip_from_owner(event) -> bool:
                        if media.clip_kind(m) and not m.out and event.date.timestamp() - m.date.timestamp() < 900), None)
     if not source:
         return False  # no voice message around: not about a clip
-    tag = match.group("tag").lower()
+    tag = " ".join(match.group("tag").lower().split())
     kind = media.clip_kind(source)
     saved = await app.client.send_file("me", source.media, voice_note=kind == "voice", video_note=kind == "video")
     media.add_clip(tag, saved)
@@ -405,8 +405,14 @@ async def obey(event, order: str) -> bool:
     """A message from your other account: if it is an order, carry it out and answer with the result.
     -> False if it was just conversation (then it is answered like any other message)."""
     chat_id = event.chat_id
-    if not pilot.is_order(order):
+    pending_question = pilot.asked_back if pilot.asked_back and time.time() - pilot.asked_back["at"] < 180 \
+        and pilot.asked_back["chat"] == chat_id else None
+    if pending_question and not pilot.is_order(order):
+        # the account asked "which group?" and this is the answer: the order goes on with it
+        order = f"{pending_question['order']}\n(you asked: {pending_question['question']} — the owner answers: {order})"
+    elif not pilot.is_order(order):
         return False  # a question, an opinion, banter: never treated as a command
+    pilot.asked_back = None
     commanding.add(chat_id)
     try:
         async with pilot_busy:

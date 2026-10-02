@@ -77,7 +77,8 @@ async def on_incoming(event):
     if sender.id in commander_ids:
         if await teach(event) or await save_clip_from_owner(event) or await own_photo_to_avatar(event):
             return
-        if pilot.is_order(event.raw_text or "") or event.chat_id in order_queue:
+        answering = pilot.asked_back and pilot.asked_back["chat"] == event.chat_id and time.time() - pilot.asked_back["at"] < 180
+        if pilot.is_order(event.raw_text or "") or event.chat_id in order_queue or answering:
             order = await gather_order(event)
             if order is None or await obey(event, order):
                 return

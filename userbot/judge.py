@@ -435,10 +435,18 @@ RELAY_RE = re.compile(r"передай\w*|скажи\s+(ему|ей|им|мам�
 RELAY_OK_RE = re.compile(r"передам|скажу|aytaman|aytib\s+qo|i'?ll\s+tell|will\s+tell|xop\b", re.I)
 
 
+# "Отправил", "Готово, поставил": a chat reply can't have DONE anything — only an order that really ran may say so
+DONE_RE = re.compile(r"^\W*(?:(?:ок(?:ей)?|хорошо|да|ладно|понял|ok(?:ay)?|yes|sure)[\s,.!]+)?(?:уже\s+)?(?:отправил|отправлено|"
+                     r"скинул|переслал|поставил|удалил|сохранил|написал\s+(?:ему|ей|им)|сделал|готово|сделано|добавил|зашёл|зашел|"
+                     r"вступил|done|sent|saved|deleted|added|joined|yubordim|qildim)\b", re.I)
+
+
 def overreach(them: str, draft: str, known_today: str = "") -> str | None:
     """-> 'commitment' (agreeing to come/meet/bring/help), 'claim' (yes/no about what you did) or 'situation'
     (details about where you are / what you ordered / when you arrive that nobody gave the account) — or None."""
     text = draft.lower()
+    if DONE_RE.match(text) and not known_today:
+        return "claim"
     if UNSURE_RE.search(text):
         return None  # already non-committal
     if RELAY_RE.search(them) and RELAY_OK_RE.search(text):

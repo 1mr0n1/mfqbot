@@ -42,6 +42,7 @@ SERVICE_CHAT = 777000     # Telegram's own notifications (login codes): never re
 RESULT_CHARS = 1800
 
 _dialogs: tuple[float, list] = (0.0, [])
+asked_back: dict | None = None   # a trusted order that stopped to ask something: {"order", "question", "chat", "at"}
 waiting: dict | None = None   # an order that stopped to ask you: {"messages", "call", "here", "sends", "to"}
 
 
@@ -291,6 +292,53 @@ async def schedule_message(ctx, run, chat, text, at):
     _count_send(run, entity)
     await ctx.client.send_message(entity, _text(text), schedule=when)
     return f"scheduled for {_name(entity)} at {when:%d.%m %H:%M}"
+
+
+def _voice(m) -> bool:
+    return bool(getattr(m, "voice", None) or getattr(m, "video_note", None))
+
+
+@tool("tag, chat='here' — keep the latest voice message (or round video) from a chat as a clip under this name, to send later")
+async def save_clip(ctx, run, tag, chat="here"):
+    entity = await resolve(ctx, chat, run["here"])
+    source = next((m for m in await ctx.client.get_messages(entity, limit=30) if _voice(m)), None)
+    if not source:
+        raise Refused("there is no voice message or round video in that chat")
+    kind = "voice" if source.voice else "video"
+    saved = await ctx.client.send_file("me", source.media, voice_note=kind == "voice", video_note=kind == "video")
+    tag = " ".join(str(tag).lower().split())
+    media.add_clip(tag, saved)
+    return f"saved the {kind} message as the clip '{tag}'"
+
+
+@tool("chat, tag='' — send a voice message: the saved clip with this name, or (no tag) the latest voice message the "
+      "owner sent in the chat where the order was given")
+async def send_voice(ctx, run, chat, tag=""):
+    entity = await resolve(ctx, chat, run["here"])
+    tag = " ".join(str(tag).lower().split())
+    clips = media.load_clips()
+    if tag and tag not in clips:
+        close = [t for t in clips if tag in t or t in tag]
+        if len(close) != 1:
+            raise Refused(f"no clip called '{tag}'. Saved clips: {', '.join(sorted(clips)) or 'none'}")
+        tag = close[0]
+    if tag:
+        source = await ctx.client.get_messages("me", ids=clips[tag]["msg_id"])
+    else:
+        if not run["here"]:
+            raise Refused("say which clip (tag); there is no chat to take a voice message from")
+        source = next((m for m in await ctx.client.get_messages(run["here"], limit=30) if _voice(m) and not m.out), None)
+    if not source or not _voice(source):
+        raise Refused("that voice message is gone" if tag else "there is no voice message from the owner in this chat")
+    _count_send(run, entity)
+    await ctx.client.send_file(entity, source.media, voice_note=bool(source.voice), video_note=bool(source.video_note))
+    return f"voice message{f' “{tag}”' if tag else ''} sent to {_name(entity)}"
+
+
+@tool("(nothing) — the names of the saved voice clips")
+async def list_clips(ctx, run):
+    clips = media.load_clips()
+    return ", ".join(f"{t} ({c['kind']})" for t, c in sorted(clips.items())) or "no clips saved yet"
 
 
 @tool("chat, emoji — send a sticker with this emoji")
@@ -694,7 +742,7 @@ async def send_picture(ctx, run, chat, query):
 
 
 # ---------- what needs your yes ----------
-READ_ONLY = {"list_chats", "find_chat", "read_chat", "search", "user_info", "web_search", "open_page"}
+READ_ONLY = {"list_chats", "find_chat", "read_chat", "search", "user_info", "web_search", "open_page", "list_clips"}
 SAME_CHAT_OK = {"send_message", "send_sticker", "send_gif", "react", "mark_read", "edit_last", "pin_last"}
 
 
@@ -792,6 +840,9 @@ def prompt(ctx, here_name: str | None, chats: str = "", may_chat: bool = False, 
         "with chat=\"here\" and NO query. Use query only when the owner describes a picture to find (\"поставь на аву "
         "кота\"); never make up a query from what a photo shows. убери/удали аву → remove_avatar; \"ту что была до / the one before / previous / старую\" → "
         "remove_avatar with which=\"previous\" (NEVER the current one unless he says current); "
+                "голосовое/войс/voice: \"сохрани (это голосовое) как X\" → save_clip (NEVER add_contact); \"отправь голосовое "
+        "[X] в/кому Y\" → send_voice (with tag X if a name is given, without tag for \"это голосовое\"); "
+        "add_contact is only for \"сохрани/добавь <человека> в контакты\". "
                 "закрепи → pin_last; достань из архива/разархивируй → archive with on=false; "
         "\"не отвечай X автоматически\", \"я сам отвечу X\" → bot_mode manual; \"не трогай чат X\" → bot_mode off; "
         "напомни/позже/в HH:MM → schedule_message; \"ответь всем кто ждёт\" → list_chats(unread=true, kind=person) "
@@ -886,7 +937,7 @@ async def run(ctx, order: str, here: int | None = None, trusted: bool = False, m
               context: str = "") -> str | None:
     """Carry out one order; -> the report for the owner (None: may_chat was set and it was just conversation).
     trusted: the order comes from a commander — no confirmations, no warnings."""
-    global waiting, _dialogs
+    global waiting, _dialogs, asked_back
     order = order.strip()
     if order.casefold() in ("yes", "y", "да", "ок", "ok", "ha"):
         if not waiting:
@@ -933,6 +984,8 @@ async def run(ctx, order: str, here: int | None = None, trusted: bool = False, m
             trace.emit("decision", "Pilot", f"Order from your other account: {r['order'][:300]}")
         if "done" in step or "ask" in step:
             report = str(step.get("done") or step.get("ask"))
+            if r.get("trusted") and ("ask" in step or report.rstrip().endswith("?")):
+                asked_back = {"order": r["order"], "question": report[:200], "chat": r["here"], "at": time.time()}
             break
         name = step.get("tool")
         # some models put the arguments next to "tool" instead of inside "args"

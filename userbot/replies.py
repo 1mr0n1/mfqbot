@@ -423,6 +423,8 @@ async def reply_flow(chat_id: int, contact: User):
             over = None if answer_each(several, parts, fixed) else judge.overreach(their_text, said, memory.today_note())
             if researched and over in ("situation", "claim"):
                 over = None  # "Белл получил патент в 1876" is the looked-up fact, not something about your own day
+            if photo_msg and not pfp_failed and over == "claim":
+                over = None  # the profile photo really was changed just now: "готово" is true
             if over:
                 trace.emit("decision", who, f"Draft made a {over} I can't back up (“{said[:60]}”) — rewriting")
                 again = clean_reply(await generate(history, contact, hint + (
@@ -568,7 +570,7 @@ async def reply_flow(chat_id: int, contact: User):
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
             late = None if answer_each(several, parts, fixed) or not said \
                 else judge.overreach(their_text, said, memory.today_note())
-            if researched and late in ("situation", "claim"):
+            if (researched and late in ("situation", "claim")) or (photo_msg and not pfp_failed and late == "claim"):
                 late = None
             if late:
                 neutral = judge.dodge(late, lang.base(lang.detect(their_text)))
