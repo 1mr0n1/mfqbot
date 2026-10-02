@@ -8,7 +8,7 @@ Three layers, from fast to slow. All names in here are made up.
 .venv/bin/python -m unittest discover tests
 ```
 
-About 330 cases in `test_rules.py`: what may never be sent, what counts as a promise or a made-up fact, when a
+About 400 cases in `test_rules.py`: what may never be sent, what counts as a promise or a made-up fact, when a
 chat is "dry", when you are being called in a group, what is an order and what is just talk, which web addresses
 may be opened, and so on. Run it before and after every change.
 
@@ -24,13 +24,15 @@ USERBOT_INTRO=true .venv/bin/python -m userbot.simulate tests/scenarios/who_is_t
 PYTHONPATH=. .venv/bin/python tests/group_sim.py tests/group_cases.json out.json   # being called in groups (also group_cases2.json: 81 more)
 ```
 
-`scenarios/`: `multi` (general), `hard` and `night2` (traps, family in Uzbek, scams, crises, sums), `night3` (30 long conversations), `night4` (Uzbek in Latin and Cyrillic, English), `dry` and `react` (keeping a chat going vs. a 👍), `multiq` (several questions),
+`scenarios/`: `multi` (general), `hard` and `night2` (traps, family in Uzbek, scams, crises, sums), `night3` (30 long conversations), `night4` (Uzbek in Latin and Cyrillic, English), `edge` (odd inputs), `dry` and `react` (keeping a chat going vs. a 👍), `multiq` (several questions),
 `who_is_this` (unknown people), `facts` (looking things up — set `C.LOOKUP_ON` for it).
 
 ## 3. Orders (real model, fake account)
 
 ```
 PYTHONPATH=. .venv/bin/python tests/pilot_sim.py tests/pilot_orders.json out.json
+PYTHONPATH=. .venv/bin/python tests/pilot_sim.py tests/commander_orders.json out.json 0    # 98 from your other account
+PYTHONPATH=. .venv/bin/python tests/pilot_sim.py tests/commander_orders2.json out.json 0   # 40 more: talk vs. orders
 ```
 
 83 orders in plain words against a made-up account; each has a pattern that must appear in what the account did,
