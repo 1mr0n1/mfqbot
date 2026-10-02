@@ -217,6 +217,15 @@ async def user_info(ctx, run, user):
             f"last seen: {status} | bio: {full.full_user.about or '-'} | blocked: {bool(full.full_user.blocked)}")
 
 
+def _text(text) -> str:
+    text = str(text or "").strip()
+    if not text:
+        raise Refused("empty text")
+    if re.search(r"(?m)^\s*\.ai\b", text):
+        raise Refused("a message starting with .ai would be executed as the owner's command — not sent")
+    return text
+
+
 def _count_send(run, entity):
     run["to"].add(utils.get_peer_id(entity))
     run["sends"] += 1
@@ -233,14 +242,13 @@ class NeedsYes(Exception):
 @tool("chat, text, reply_to_last=false — send a text message (reply_to_last: as a reply to their latest message)")
 async def send_message(ctx, run, chat, text, reply_to_last=False):
     entity = await resolve(ctx, chat, run["here"])
-    if not str(text).strip():
-        raise Refused("empty text")
+    text = _text(text)
     _count_send(run, entity)
     reply_to = None
     if reply_to_last:
         last = next((m for m in await ctx.client.get_messages(entity, limit=10) if not m.out), None)
         reply_to = last.id if last else None
-    await ctx.send(utils.get_peer_id(entity), str(text).strip(), reply_to=reply_to)
+    await ctx.send(utils.get_peer_id(entity), text, reply_to=reply_to)
     return f"sent to {_name(entity)}"
 
 
@@ -249,7 +257,7 @@ async def schedule_message(ctx, run, chat, text, at):
     entity = await resolve(ctx, chat, run["here"])
     when = _when(at)
     _count_send(run, entity)
-    await ctx.client.send_message(entity, str(text).strip(), schedule=when)
+    await ctx.client.send_message(entity, _text(text), schedule=when)
     return f"scheduled for {_name(entity)} at {when:%d.%m %H:%M}"
 
 
@@ -305,7 +313,7 @@ async def edit_last(ctx, run, chat, text):
     mine = next((m for m in await ctx.client.get_messages(entity, limit=30) if m.out and m.raw_text), None)
     if not mine:
         raise Refused("you have no recent text message there")
-    await ctx.client.edit_message(entity, mine.id, str(text).strip())
+    await ctx.client.edit_message(entity, mine.id, _text(text))
     return f"edited “{mine.raw_text[:60]}” in {_name(entity)}"
 
 

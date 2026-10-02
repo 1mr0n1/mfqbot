@@ -158,9 +158,21 @@ LEAK_RE = re.compile(r"\b(the user|we need to|we must|the instruction|system pro
 MAX_REPLY_CHARS = 700
 
 
+COMMAND_RE = re.compile(r"(?m)^\s*\.ai\b")  # a line that this account would read as one of your commands
+
+
 def looks_safe(reply: str) -> bool:
+    # A text that starts with ".ai" would be executed as YOUR command the moment the account sends it, so nothing
+    # written by a model or copied from another person may ever look like one.
     return (len(reply) <= MAX_REPLY_CHARS and not LEAK_RE.search(reply) and not re.search(r"@[A-Za-z]\w{3,}", reply)
-            and not re.search(r"\+?\d[\d\s\-()]{7,}\d", reply))  # no phone / card / code-like numbers, ever
+            and not re.search(r"\+?\d[\d\s\-()]{7,}\d", reply)  # no phone / card / code-like numbers, ever
+            and not COMMAND_RE.search(reply))
+
+
+def typed_by_bot(event) -> bool:
+    """An outgoing message the account sent on its own (not typed by you): never a command."""
+    return (event.raw_text in our_texts.get(event.chat_id, []) or event.id in our_ids
+            or bool(getattr(event.message, "fwd_from", None)))  # a forwarded ".ai …" is someone else's text
 
 
 # Lines that make it sound like a customer-support bot get dropped.
@@ -986,6 +998,8 @@ async def reply_flow(chat_id: int, contact: User):
 
 @client.on(events.NewMessage(outgoing=True, pattern=r"^\.ai(?:\s+(\w+))?(?:\s+(@?[\w.-]+))?\s*$"))
 async def on_command(event):
+    if typed_by_bot(event):
+        return
     arg = (event.pattern_match.group(1) or "status").lower()
     if arg in PROFILE_COMMANDS or arg in ("note", "today", "do"):
         return  # handled by on_profile_command / on_note_command / on_today_command
@@ -1095,6 +1109,8 @@ PROFILE_COMMANDS = {"name", "surname", "bio", "photo", "profile"}
 
 async def send_as_bot(chat_id: int, text: str, **kwargs):
     """A text sent by the account itself (not typed by you): recorded so it isn't mistaken for you stepping in."""
+    if COMMAND_RE.search(text):
+        raise ValueError("a message that looks like an .ai command is never sent")
     our_texts.setdefault(chat_id, []).append(text)
     msg = await client.send_message(chat_id, text, **kwargs)
     our_ids.add(msg.id)
@@ -1136,6 +1152,8 @@ async def operate(order: str, here: int | None = None):
 @client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+do\s+(.+)$"))
 async def on_do_command(event):
     """`.ai do <anything>`: operate the account in plain words. Typed in a chat, that chat is "here"."""
+    if typed_by_bot(event):
+        return
     order, here = event.pattern_match.group(1).strip(), event.chat_id
     await event.delete()
     spawn(operate(order, here))
@@ -1144,6 +1162,8 @@ async def on_do_command(event):
 @client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+today(?:\s+(.+))?$"))
 async def on_today_command(event):
     """`.ai today <text>`: something true about today, so questions like "did you do your homework?" get real answers."""
+    if typed_by_bot(event):
+        return
     text = (event.pattern_match.group(1) or "").strip()
     await event.delete()
     if text:
@@ -1155,6 +1175,8 @@ async def on_today_command(event):
 @client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+note\s+(.+)$"))
 async def on_note_command(event):
     """`.ai note <text>` in a private chat: remember something about that person."""
+    if typed_by_bot(event):
+        return
     text, chat_id = event.pattern_match.group(1).strip(), event.chat_id
     await event.delete()
     if chat_id == me.id or not event.is_private:
@@ -1167,6 +1189,8 @@ async def on_note_command(event):
 @client.on(events.NewMessage(outgoing=True, pattern=r"(?s)^\.ai\s+(name|surname|bio|photo|profile)\b\s*(.*)$"))
 async def on_profile_command(event):
     """Owner commands for name / surname / bio / photo. (The only thing a chat can trigger is pfp.py.)"""
+    if typed_by_bot(event):
+        return
     global me
     cmd, value = event.pattern_match.group(1).lower(), event.pattern_match.group(2).strip()
     replied = await event.get_reply_message() if event.is_reply else None
@@ -1281,7 +1305,8 @@ def echo_of(msg):
     if msg.sticker:
         return msg
     text = (msg.raw_text or "").strip()
-    return text if text and len(text) <= C.SPAM_ECHO_CHARS and looks_safe(text) else "?"
+    plain = not re.search(r"https?://|www\.|t\.me/|\w\.[a-z]{2,}(/|\b)", text, re.I)  # no links sent in your name
+    return text if text and len(text) <= C.SPAM_ECHO_CHARS and plain and looks_safe(text) else "?"
 
 
 async def spam(chat_id: int, who: str, items: list) -> int:
