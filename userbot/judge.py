@@ -84,6 +84,13 @@ def closer_action(history) -> str | None:
     return "react:👍"
 
 
+# one-word answers that say nothing more and close nothing ("how are you?" — "норм")
+DRY_WORDS = set("""норм нормально норма ничего ниче ничо нечего да нет не неа ага угу хз незнаю так себе пойдет пойдёт сойдет
+    хорошо плохо отлично супер класс круто скучно тоже также и я ну вот всё все ок окей ладно ясно понятно понял поняла
+    nm nothing nth good fine ok okay yeah yep nah nope same idk bored cool nice alr aight bet lol
+    yaxshi zor ha yoq yo'q hech narsa bilmadim mayli xop boladi tuzuk""".split())
+
+
 def dry(history) -> bool:
     """They answer with next to nothing ("ок", "да", "норм", a laugh, a sticker) but haven't said goodbye:
     the conversation is running out, not ending."""
@@ -100,8 +107,9 @@ def dry(history) -> bool:
         kind = _closer_kind(text)
         if "?" in text or kind in ("bye", "thanks") or GREETING_RE.match(text):
             return False
-        if kind is None and len(re.findall(r"[^\W\d_]+", text)) > 2:
-            return False
+        words = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)*", text.lower())
+        if kind is None and not (words and len(words) <= 3 and all(w in DRY_WORDS or w in VOCATIVE for w in words)):
+            return False  # anything with content — a short question, a request, news — is not "dry"
         worded = worded or kind != "emoji"
     return worded  # a lone 👍, ❤ or sticker ends an exchange; it isn't an invitation to keep talking
 
@@ -344,6 +352,11 @@ DID_RE = re.compile(
     r"\b(сделал\w*|сдал\w*|прив[её]з(ла|ли)?|прин[её]с(ла|ли)?|подготовил\w*|написал\w*|выучил\w*|поел\w*|покушал\w*|кушал\w*|"
     r"взял\w*|купил\w*|забрал\w*|был\w*\s+(на|в|у)|ходил\w*|почему\s+(тебя|вас)\s+не\s+было)\b|"
     r"\bdid\s+(u|you)\b|\bhave\s+(u|you)\b|\b\w{2,}(dingmi|dingizmi|ganmisan|ganmisiz|ibmi|dimi)\b", re.I)
+# yes/no questions about you right now that only you can answer: "ты выпил таблетки?", "папа дома?", "температура есть?"
+STATE_Q_RE = re.compile(
+    r"\bты\b[^?]*\b\w{2,}(ил|ал|ел|ял|ул|ыл|ёл)(а|и)?\b[^?]*\?|\b\w{2,}(ил|ал|ел|ял|ул|ыл)(а|и)?\s*\?"
+    r"|\b(есть|дома|тут|там|рядом|свободен|свободна|занят|занята|спишь|идешь|идёшь|едешь|готов|готова)\s*\?"
+    r"|\b\w{3,}(mi|misan|misiz)\s*\?", re.I)
 CLAIM_RE = re.compile(r"^\W*(да|нет|не|неа|ага|угу|ещё\s+нет|еще\s+нет|пока\s+нет|уже|yes|yeah|yep|no|nope|nah|not\s+yet|"
                       r"ha|haa|yo['ʻ‘’]?q|yoq|xa|ха|йўқ|йук|ҳа|hali\s+yo['ʻ‘’]?q|"
                       r"\w{2,}(dim|madim|ganman|maganman))\b", re.I)
@@ -410,7 +423,7 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
         return None  # "tell your dad…" → "ok, I'll tell him" is fine
     if PLAN_RE.search(them) and (COMMIT_RE.search(text) or AFFIRM_RE.match(text)):
         return "commitment"
-    if DID_RE.search(them) and CLAIM_RE.match(text) and not known_today:
+    if (DID_RE.search(them) or STATE_Q_RE.search(them)) and CLAIM_RE.match(text) and not known_today:
         return "claim"
     if C.GROUNDED and made_up(them, draft, known_today):
         return "situation"

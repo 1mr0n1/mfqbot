@@ -67,6 +67,23 @@ def _kind(entity) -> str:
     return "group"
 
 
+KIN = {"mom": "мам мать мом mom mother mum ona oyi", "dad": "пап отец отц dad father ota dada",
+       "sister": "сестр sister sis singl opa", "brother": "брат brother bro aka uka", "uncle": "дяд uncle amaki tog",
+       "aunt": "тет тёт aunt xola amma", "grandma": "бабушк grandma buvi", "grandpa": "дедушк grandpa bobo"}
+
+
+def kin(ref: str) -> str | None:
+    """ "маме", "my mom", "дяде" -> the @username that facts.md gives for that relative ("@x is my mom")."""
+    words = (ref or "").casefold().replace("ё", "е").split()
+    relation = next((rel for rel, stems in KIN.items() for w in words for stem in stems.split() if w.startswith(stem)), None)
+    if not relation or len(words) > 3:
+        return None
+    facts = people()
+    match = (re.search(rf"(@\w{{4,}})\s*(?:is|=|-|—)?\s*(?:is\s+)?my\s+(?:\w+\s+)?{relation}\b", facts, re.I)
+             or re.search(rf"\b{relation}\b\s*(?:is|=|:|-|—)\s*(@\w{{4,}})", facts, re.I))
+    return match.group(1) if match else None
+
+
 async def dialogs(ctx) -> list:
     global _dialogs
     if time.time() - _dialogs[0] > 60:
@@ -92,6 +109,11 @@ async def resolve(ctx, ref, here: int | None):
             entity = await ctx.client.get_entity(int(ref) if ref.lstrip("-").isdigit() else ref)
         except Exception as e:
             raise Refused(f"could not find {ref}: {e.__class__.__name__}")
+    elif kin(ref):
+        try:
+            entity = await ctx.client.get_entity(kin(ref))
+        except Exception as e:
+            raise Refused(f"the notes say {ref} is {kin(ref)}, but that chat could not be opened: {e.__class__.__name__}")
     else:
         want = _norm(ref)
         scored = []

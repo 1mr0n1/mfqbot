@@ -749,6 +749,12 @@ async def reply_flow(chat_id: int, contact: User):
                 log.warning("%s: giving up, no model answered", who)
                 trace.emit("warning", who, "Giving up — no model answered")
             action = judge.parse_model_choice(reply or "") if C.SMART_SKIP and not greeting.reply else None
+            if keep_going and not action and "?" not in (reply or ""):
+                # the point was to give them something to answer; a filler line doesn't, so close like a person would
+                trace.emit("decision", who, "No good question came to mind — leaving it at a reaction")
+                action = judge.closer_action(history) if C.SMART_SKIP else None
+                if not action:
+                    return
             if action:  # the model decided this needs no text
                 await no_text_reply(chat_id, who, action, history)
                 return

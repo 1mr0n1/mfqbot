@@ -103,6 +103,16 @@
   <button id="pause">Pause</button>
 </header>
 <main>
+  <div class="draft" id="why" hidden style="border-color:var(--red)">
+    <div class="top"><span class="who" style="color:var(--red)">Not connected</span><span class="phase" id="whysince" style="color:var(--dim)"></span></div>
+    <div id="whytext"></div>
+    <div class="hint" id="whyfix" style="margin:6px 0 0"></div>
+  </div>
+  <div class="draft" id="userbotwhy" hidden style="border-color:var(--red)">
+    <div class="top"><span class="who" style="color:var(--red)">Userbot not running</span></div>
+    <div id="userbotwhytext"></div>
+    <div class="hint" style="margin:6px 0 0">Nothing is being answered in Telegram. On the Mac, start it: .venv/bin/python -m userbot.main — if it stops again, the reason is at the end of its log.</div>
+  </div>
   <div class="draft" id="conn" hidden style="border-color:var(--blue)">
     <div class="top"><span class="who">Connection</span><span class="phase" id="connmsg" style="color:var(--dim)"></span></div>
     <div class="hint" style="margin:0 0 8px">Only needed when this page isn't opened on the Mac itself. Backend address = your tunnel URL (https://…), token = the ADMIN_TOKEN from the Mac's .env. Both are stored in this browser only.</div>
@@ -155,18 +165,59 @@ if (fromLink) { store.apiBase = fromLink; history.replaceState(null, "", locatio
 const API = (store.apiBase || "").replace(/\/+$/, ""), TOKEN = store.apiToken || "";
 let reachable = null;   // null = not tried yet, true/false = last attempt
 const HOSTED = !["127.0.0.1", "localhost"].includes(location.hostname);
+let problem = null, lastOk = 0, probing = false;
+function ago(ms) { const sec = Math.round(ms / 1000); return sec < 90 ? sec + " s" : sec < 5400 ? Math.round(sec / 60) + " min" : Math.round(sec / 3600) + " h"; }
+function showProblem(what, fix) {
+  problem = what;
+  $("why").hidden = !what;
+  if (!what) return;
+  $("whytext").textContent = what;
+  $("whyfix").textContent = fix || "";
+  $("whysince").textContent = lastOk ? "last connected " + ago(Date.now() - lastOk) + " ago" : "never connected from this browser";
+}
+// The request failed without any answer. Find out which part of the chain is broken.
+async function diagnose() {
+  if (probing) return;
+  probing = true;
+  const host = (API || location.origin).replace(/^https?:\/\//, "");
+  try {
+    if (HOSTED && !API) return showProblem("No backend address is set.", "Open ⚙︎ and enter the address of your Mac's tunnel and the ADMIN_TOKEN.");
+    if (navigator.onLine === false) return showProblem("This device is offline.", "Check Wi-Fi or mobile data here; the Mac may be fine.");
+    let answered = false;
+    try { await fetch(API + "/health", {mode: "no-cors", cache: "no-store"}); answered = true; } catch {}
+    if (answered) return showProblem("The tunnel at " + host + " answers, but not with anything this page can use.",
+      "Either the backend behind the tunnel is not running (on the Mac: .venv/bin/python -m backend.main), or it does not accept this site: ADMIN_ORIGINS in .env must contain " + location.origin + ".");
+    if (/trycloudflare\.com$/.test(host)) return showProblem("Nothing answers at " + host + ".",
+      "This is a temporary Cloudflare address: it stops working when the tunnel restarts. Either the tunnel got a new address (set it in ⚙︎), or the Mac is off, asleep or offline.");
+    if (/\.ts\.net$/.test(host)) return showProblem("Nothing answers at " + host + ".",
+      "The Mac is off, asleep or offline, Tailscale is not running on it, or the Funnel has dropped (on the Mac: tailscale funnel reset, then tailscale funnel --bg 8000).");
+    return showProblem("Nothing answers at " + host + ".", "The Mac is off, asleep or offline, the tunnel is not running, or the address in ⚙︎ is wrong.");
+  } finally { probing = false; }
+}
 async function api(path, opts) {
   opts = opts || {};
   if (TOKEN) opts.headers = Object.assign({}, opts.headers, {Authorization: "Bearer " + TOKEN});
   let r;
   try { r = await fetch(API + path, opts); }
-  catch (e) {   // the address doesn't answer at all: wrong or expired tunnel address, or the Mac is off
+  catch (e) {   // no answer at all
     reachable = false;
-    if (HOSTED) { $("conn").hidden = false; $("connmsg").textContent = "Can't reach " + (API || "the backend") + " — the tunnel address has probably changed."; }
+    diagnose();
     throw e;
   }
   reachable = true;
-  if (r.status === 401 || r.status === 403) { $("conn").hidden = false; $("connmsg").textContent = "The backend refused the token."; throw new Error("auth"); }
+  if (r.status === 401 || r.status === 403) {
+    $("conn").hidden = false;
+    showProblem(TOKEN ? "The Mac answered, but it refused the token (" + r.status + ")." : "The Mac answered, but this browser has no token saved.",
+                "Open ⚙︎ and paste the ADMIN_TOKEN from the Mac's .env file" + (r.status === 403 ? " — or this site is not in ADMIN_ORIGINS." : "."));
+    throw new Error("auth");
+  }
+  if (r.status >= 500) {
+    showProblem("The tunnel works, but the backend behind it does not answer (error " + r.status + ").",
+                "On the Mac, start the backend: .venv/bin/python -m backend.main");
+    throw new Error("backend");
+  }
+  lastOk = Date.now();
+  if (problem) showProblem(null);
   return r;
 }
 async function post(url, body) {
@@ -306,14 +357,19 @@ function renderToggles() {
 function renderHeader() {
   const fresh = status.age !== null && status.age !== undefined && status.age < 15;
   const chips = [];
-  if (reachable === false) chips.push('<span class="chip bad">can\'t reach the backend — check the address in ⚙︎</span>');
-  else if (!fresh) chips.push('<span class="chip bad">userbot not running</span>');
+  if (reachable === false) chips.push('<span class="chip bad">not connected — see why below</span>');
+  else if (!fresh) chips.push('<span class="chip bad">userbot not running' + (status.age ? ' (silent for ' + ago(status.age * 1000) + ')' : '') + '</span>');
   else {
     if (status.paused) chips.push('<span class="chip bad">paused</span>');
     if (status.asleep) chips.push('<span class="chip warn">asleep — answers in the morning</span>');
     else if (status.busy) chips.push('<span class="chip warn">at school — answers come late</span>');
     chips.push(`<span class="chip">${esc((status.models || []).join(" → "))}</span>`);
   }
+  if (reachable && !problem) {
+    $("userbotwhy").hidden = fresh;
+    $("userbotwhytext").textContent = status.age ? "The backend is reachable, but the userbot last reported " + ago(status.age * 1000) + " ago."
+      : "The backend is reachable, but the userbot has not reported since the backend started.";
+  } else $("userbotwhy").hidden = true;
   $("chips").innerHTML = chips.join(" ");
   $("pause").textContent = status.paused ? "Resume" : "Pause";
   $("pause").className = status.paused ? "on" : "";
