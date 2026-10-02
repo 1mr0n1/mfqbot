@@ -67,6 +67,7 @@ TODAY_PATH = HERE / "today.json" # what you told it about today (.ai today …);
 REMEMBER = os.environ.get("USERBOT_REMEMBER", "true").lower() in ("1", "true", "yes")
 SMART_SKIP = os.environ.get("USERBOT_SMART_SKIP", "true").lower() in ("1", "true", "yes")  # react / stay silent
 HANDOFF = os.environ.get("USERBOT_HANDOFF", "true").lower() in ("1", "true", "yes")        # sensitive -> you
+HANDOFF_JUDGE = True             # also hand off messages a model judges serious (distress, bad news); off = keywords only
 HANDOFF_HOLD = 30 * 60           # after handing a chat to you, stay out of it this long (or until you write there)
 
 # Profile photo on request: someone sends a photo and asks you to use it as your profile picture (see pfp.py)

@@ -98,25 +98,34 @@ REACT_HINT = ("\nIf they ask you to like or react to their message, answer with 
 
 
 # ---------- messages the owner should handle personally ----------
-STRONG = [
+ASK = r"(скинь|скинешь|кинь|переведи|перевед[её]шь|отправь|дай|дашь|займи|одолжи|нужн[оы]|надо|tashla|tashab|o'tkaz|yubor|ber|send|give|lend|transfer|pay)"
+AMOUNT = r"(деньг\w*|денег|на\s+карт\w*|kartaga|\bpul\b|\$\s?\d{2,}|\d{2,}\s?(k\b|к\b|тыс\w*|млн\w*|mln|ming|сум\w*|sum\b|so'm|руб\w*|\$|usd))"
+STRONG = [  # unmistakable cases, decided without a model
     ("a verification code or password",
      r"\b(otp|password|passcode)\b|парол\w*|\bparol\w*"
      r"|(sms|смс|verification|login|confirm\w*|подтвержд\w*|tasdiq\w*)\W+(\w+\W+){0,3}(code|код|kod)\b"
      r"|\b(code|код|kod)\b\W+(\w+\W+){0,3}(sms|смс|пришл\w*|прислал\w*|отправ\w*|скин\w*|keldi|yubor\w*|ayt\w*|came|sent)"),
-    ("money", r"\b(lend|borrow|loan|owe|debt|pay me|send me \$?\d|transfer|cash ?app|paypal)\b|\$\s?\d{2,}|\d{2,}\s?(\$|usd|сум|sum|so'm|som|руб|k\b|к\b)|\d+\s?(млн|тыс|mln|ming|млрд)\w*"
-              r"|\bзаня(ть|л|ла)\b|\bзайм\w*|\bдолж(ен|на|ок)\b"
-              r"|в\s*долг|одолжи\w*|займи\w*|перевед\w*|скинь\s+(деньг|на карт)|на карту|деньг\w*|\bqarz\w*|\bpul\w*\s+(ber|kerak|tashla|o'tkaz)|kartaga"),
-    ("an emergency", r"\b(emergency|hospital|ambulance|accident|police|urgent(ly)?|asap|died|passed away)\b|срочно|больниц\w*|скор(ая|ую)"
-                     r"|авари\w*|полици\w*|умер(ла)?|kasalxona\w*|tez yordam|avariya|vafot|zudlik|shoshilinch"),
+    # asking for money or a transfer — not merely mentioning money or a price
+    ("money", rf"\b(lend|borrow|loan)\b|\bowe\s+(me|you|u)\b|\bзайм\w*|\bзаня(ть|л|ла)\b|\bодолж\w*|\bв\s+долг\b|\bqarz\w*"
+              rf"|\b{ASK}\b[^.?!\n]{{0,40}}{AMOUNT}|{AMOUNT}[^.?!\n]{{0,25}}\b{ASK}\b"),
+    # something happening right now, not a word that just sounds urgent
+    ("an emergency", r"\b(emergency|ambulance)\b|\b(in|at)\s+(the\s+)?hospital\b|\b(car\s+)?accident\b|\bcall\s+the\s+police\b"
+                     r"|\bв\s+больниц\w*|скор(ая|ую)\s+помощ\w*|попал\w*\s+в\s+авари\w*|\bавария\b"
+                     r"|срочно\s+(позвони|приезжай|приходи)|у\s+меня\s+умер\w*|\bумерла?\s+(мама|папа|бабушка|дедушка|брат|сестра)"
+                     r"|kasalxona\w*|tez\s+yordam|avariya|vafot\s+et\w*"),
 ]
 CLASSIFY = (
     "Below are the latest messages someone sent to their friend or relative {name} in a private chat. Decide whether "
-    "{name} must answer PERSONALLY. Answer PERSONAL only for something clearly serious: the person is in real distress "
-    "(crying, panicking, saying they are deeply hurt), a serious fight or breaking off contact, romantic or relationship "
-    "talk, illness, injury, death or other bad news, trouble with police, school administration or the law.\n"
-    "Everything else is NORMAL — including teasing, banter, jokes, mild complaints or reproaches ('you didn't reply', "
-    "'you didn't do it'), embarrassing or silly stories, everyday plans and logistics, favors, questions, greetings. "
-    "When in doubt, answer NORMAL.\n"
+    "{name} must answer PERSONALLY instead of sending a quick casual reply.\n"
+    "PERSONAL only when the person is sincerely telling something serious about THEIR OWN life right now: they are "
+    "crying, panicking or say they feel terrible; they sincerely want to end the friendship or have a serious talk "
+    "about the relationship; real bad news (illness, injury, a death); trouble with police, the school "
+    "administration or the law.\n"
+    "NORMAL for everything else, including: insults and swearing aimed at {name} ('иди нахуй', 'ты дурак'), teasing, "
+    "banter, trolling, provocations, sarcasm, complaints or reproaches ('you didn't reply'), jokes and pranks — even "
+    "ones that mention dead relatives or other serious things as part of a joke or a request to make {name} say "
+    "something; embarrassing or silly stories; plans, favors, questions, greetings; asking {name} to write or do "
+    "something. When in doubt, answer NORMAL.\n"
     "Answer with one word, PERSONAL or NORMAL, then a dash and the reason in at most 6 words.\n\nMESSAGES:\n{messages}"
 )
 
@@ -130,8 +139,8 @@ async def sensitive_reason(http: httpx.AsyncClient, name: str, history, keywords
     for reason, pattern in STRONG:
         if re.search(pattern, joined, re.I):
             return reason
-    if keywords_only or len(joined.split()) < 4:
-        return None  # too short to be worth a model call
+    if keywords_only or not C.HANDOFF_JUDGE or len(joined.split()) < 4:
+        return None  # only the unmistakable cases, or too short to be worth a model call
     try:
         resp = await http.post("/complete", json={
             "messages": [{"role": "user", "content": CLASSIFY.format(name=name, messages=joined[:1500])}],
