@@ -168,6 +168,8 @@ SPLIT_CHANCE = float(os.environ.get("USERBOT_SPLIT_CHANCE", "0.75"))
 
 LOOKUP_ON = True               # a checkable fact in dispute is looked up on the web before answering
 
+FOLLOW_UP = (35, 100)           # after "щас" / "lemme check": seconds until the account comes back with something
+
 # People
 INTRO_ON = os.environ.get("USERBOT_INTRO", "true").lower() in ("1", "true", "yes")  # unknown person -> "кто это?"
 ADD_CONTACTS = True            # once they say who they are, save them to your Telegram contacts under that name

@@ -31,7 +31,7 @@ from telethon import functions, types, utils
 from telethon.tl.types import Channel, Chat, User
 
 from . import config as C
-from . import media, trace
+from . import media, quick, trace
 
 log = logging.getLogger("userbot.pilot")
 
@@ -968,9 +968,29 @@ async def run(ctx, order: str, here: int | None = None, trusted: bool = False, m
             trace.emit("decision", "Pilot", f"Order: {order[:300]}")
     r = run_state
     report = None
+    if "script" not in r:  # a common order with one obvious meaning: the steps come from rules, not from a model
+        r["script"] = []
+        steps = quick.plan(r["order"])
+        if steps:
+            try:
+                for _, args in steps:
+                    for key in CHAT_ARGS:
+                        if args.get(key):
+                            await resolve(ctx, args[key], r["here"])  # every chat it names must exist, unambiguously
+                r["script"] = [{"tool": tool_name, "args": args} for tool_name, args in steps]
+                r["scripted"] = True
+            except Refused:
+                pass  # "напиши привет всем…": not a name after all — the model reads it
     for _ in range(MAX_STEPS):
         approved, r["approved"] = r["approved"], False   # a yes covers exactly one step
         step = r.pop("pending", None) if approved else None
+        if step is None and r["script"]:
+            step = r["script"].pop(0)
+            r["messages"].append({"role": "assistant", "content": json.dumps(step, ensure_ascii=False)})
+        elif step is None and r.get("scripted") and r["steps"] and not any(" ✗ " in s for s in r["steps"]):
+            russian = bool(re.search("[а-яё]", r["order"], re.I))
+            report = ("готово: " if russian else "done: ") + "; ".join(s.split(" → ", 1)[-1] for s in r["steps"])
+            break
         if step is None:
             step = await think(ctx, r["messages"])
             if step is None:
@@ -1026,6 +1046,7 @@ async def run(ctx, order: str, here: int | None = None, trusted: bool = False, m
                         + f"⚠️ This order wants to {e}.\nSend  .ai do yes  to go ahead, or  .ai do no")
             except Refused as e:
                 result = f"FAILED: {e}"
+                r["script"] = []  # the rule-made plan did not work out: the model takes over from here
                 r["steps"].append(f"{shown} ✗ {e}")
                 trace.emit("warning", "Pilot", f"{shown} ✗ {str(e)[:200]}")
         r["messages"].append({"role": "user", "content": f"RESULT: {result}"})

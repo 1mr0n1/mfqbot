@@ -68,6 +68,61 @@ async def no_text_reply(chat_id: int, who: str, action: str, history):
     trace.emit("sent", who, f"[reaction {emoji}] instead of a text reply")
 
 
+# "ок щас", "ща гляну", "lemme check": a promise to come back in a moment
+DEFER_RE = re.compile(
+    r"\b(щас|ща|секунд\w*|сек|минутк\w*|минуту|погоди|подожди)\b|\bсейчас\s*(?:$|[,.!]|скину|гляну|посмотрю|проверю|сделаю|напишу|найду)"
+    r"|\b(гляну|посмотрю|проверю|поищу|узнаю|уточню)\b"
+    r"|\b(lemme|let\s+me)\s+(check|see|look)\b|\b(one|a|1)\s+sec\b|\bhold\s+on\b|\bbrb\b|\bhozir\b|\bqara(yman|b)\b|\bko'raman\b", re.I)
+CAME_BACK = {"ru": ["не, хз если честно", "не нашёл пока", "не, не знаю"], "en": ["nah idk tbh", "couldn't find it"],
+             "uz": ["topolmadim hozircha", "bilmadim rosti"]}
+
+
+async def come_back(chat_id: int, contact: User, who: str, after_id: int, their_text: str, said: str):
+    """You said "щас" — so a moment later you come back with something: the answer if it can be found, or a plain
+    "couldn't find out". Staying silent after "one sec" is the one thing a person doesn't do."""
+    try:
+        await asyncio.sleep(rand(C.FOLLOW_UP))
+        if state.is_paused() or not state.is_active(chat_id, C.REPLY_MODE) or chat_id in pending or state.handed_off(chat_id):
+            return
+        history = await app.client.get_messages(chat_id, limit=C.CONTEXT_MESSAGES)
+        if not history or history[0].id != after_id:
+            return  # they wrote again, or you did: the conversation moved on by itself
+        found = await lookup.research(http, history[1:], their_text) if C.LOOKUP_ON else None
+        system = persona.format(name=app.me.first_name or full_name(app.me), contact=who,
+                                style=style_block(who, their_text, contact),
+                                now=datetime.now().strftime("%A %d %B %Y, %H:%M"), status=rhythm.status())
+        system += memory.facts_block(full_name(app.me)) + memory.notes_block(chat_id, who) + (found[1] if found else "")
+        messages = to_chat_messages(history) + [{"role": "user", "content": (
+            f"[A minute ago you told them “{said}” — that you would get back to them. Now do it, in ONE short message "
+            "in your style. If what they wanted is something you know or just looked up, give it. If it is something "
+            "about your real life that you don't actually know here, or something you'd have to do in person (send a "
+            "file, come somewhere, call), say plainly that you can't right now or don't know. Never say \"one sec\" / "
+            "\"щас\" / \"later\" again. Output only the message.]")}]
+        text = ""
+        try:
+            resp = await http.post("/complete", json={"messages": messages, "system": system, "models": C.MODELS,
+                                                      "max_tokens": 80, "temperature": C.TEMPERATURE})
+            lines = clean_reply(resp.json()["reply"]).splitlines() if resp.is_success else []
+            text = punct.apply(lines[0].strip(), punct_profile(contact)) if lines else ""
+        except Exception:
+            log.exception("%s: follow-up could not be written", who)
+        grounded = found is not None
+        if not text or not looks_safe(text) or DEFER_RE.search(text) or stale_parts(history, [text]) \
+                or (not grounded and judge.overreach(their_text, text, memory.today_note())):
+            text = random.choice(CAME_BACK.get(lang.base(lang.detect(their_text)) or "ru", CAME_BACK["ru"]))
+        if (await app.client.get_messages(chat_id, limit=1))[0].id != after_id:
+            return
+        trace.emit("decision", who, f"Said “{said}” a moment ago — coming back with: {text[:80]}")
+        await type_like_a_person(chat_id, text)
+        await send_as_bot(chat_id, text)
+        trace.emit("sent", who, text)
+        daylog.record("replied", who, text, them="(following up on your own “" + said[:40] + "”)")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("%s: follow-up failed", who)
+
+
 async def who_is_this(chat_id: int, contact: User, who: str, history, their_text: str) -> str:
     """Someone you don't know writes: find out who it is. -> a hint for the reply ("ask who this is"), or "".
     The question is asked ONCE, and only in a chat where you have never written anything. Once they say who they
@@ -233,6 +288,14 @@ async def reply_flow(chat_id: int, contact: User):
                     heard += 1
         if heard:
             trace.emit("decision", who, f"Listened to {heard} voice message(s)")
+        fresh = [m for m in itertools.takewhile(lambda m: not m.out, history) if m.id > state.handled.get(str(chat_id), 0)]
+        if fresh and C.SMART_SKIP and not force and C.VOICE_TRANSCRIBE \
+                and all((m.voice or m.video_note) and not m.raw_text for m in fresh):
+            # only voice messages, and nothing in them that could be understood (a laugh, noise): a reaction, not words
+            trace.emit("decision", who, "A voice message with no words in it — reacting instead of guessing what it said")
+            await app.client.send_read_acknowledge(chat_id)
+            await no_text_reply(chat_id, who, "react:👍", history)
+            return
         their_text = "\n".join(m.raw_text for m in reversed(list(itertools.takewhile(lambda m: not m.out, history)))
                                if m.raw_text)
 
@@ -672,6 +735,9 @@ async def reply_flow(chat_id: int, contact: User):
                               "due": rand(C.NUDGE_AFTER_READ), "read_at": None}
         else:
             asked.pop(chat_id, None)
+        said_wait = next((p for p in parts if not media.MEDIA_LINE_RE.match(p) and DEFER_RE.search(p)), None)
+        if said_wait and sent_count and sent is not None and not formal:
+            spawn(come_back(chat_id, contact, who, sent.id, their_text, said_wait))  # "щас" means: and then something follows
         rhythm.replied(chat_id)
         rhythm.online_for_a_bit(app.client)
         if sent_count:

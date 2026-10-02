@@ -45,7 +45,14 @@ def _transcribe(data: bytes) -> str:
     if len(samples) < 16000 * 0.4:  # under ~0.4s: nothing to hear
         return ""
     segments, info = _model.transcribe(samples, beam_size=1, vad_filter=True)
-    text = " ".join(s.text.strip() for s in segments).strip()
+    # A laugh, a sigh or background noise still comes back as "words" — with low confidence. Those are dropped:
+    # answering a made-up transcript is worse than knowing there was nothing to hear.
+    kept = [s.text.strip() for s in segments if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]
+    text = " ".join(kept).strip()
+    if text and info.language_probability < 0.4 and len(text) < 60:
+        log.info("Heard %.0fs of audio but no clear speech (%s, %.2f) — treated as wordless", len(samples) / 16000,
+                 info.language, info.language_probability)
+        return ""
     log.info("Transcribed %.0fs of audio (%s): %d chars", len(samples) / 16000, info.language, len(text))
     return text
 

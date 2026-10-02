@@ -75,6 +75,23 @@ LATIN_WORDS = {
 }
 
 
+RU_COMMON = set("""привет пока спасибо пожалуйста что это как где когда почему потому если чтобы или тоже уже ещё еще очень
+    сегодня завтра вчера сейчас потом хорошо плохо нормально ладно давай можно нужно надо будет было есть нет да меня тебя
+    мне тебе его она они мы вы ты он был была были буду будешь знаю хочу могу делаю делаешь""".split())
+
+
+def _dictionary_uzbek(word: str) -> bool:
+    """A word the Uzbek dictionary knows (if one was downloaded) and that is not also an English word."""
+    if len(word) < 4:
+        return False
+    try:
+        from .judge import _is_english, _load_words, in_uz_dictionary
+        _load_words()
+        return in_uz_dictionary(word) and not _is_english(word) and word not in RU_TRANSLIT
+    except Exception:
+        return False
+
+
 def _words(text: str) -> list[str]:
     text = text.lower().replace("‘", "'").replace("’", "'").replace("`", "'").replace("ʻ", "'")
     return re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)*", text)
@@ -93,8 +110,13 @@ def detect(text: str) -> str | None:
         for code, marks in CYRILLIC_MARKS:
             if set(marks) & set(text):
                 return code
+        # Uzbek typed in Cyrillic without ў/қ/ғ/ҳ ("хозир кечки, эртага борайликми") looks like Russian by its letters
+        longer = [w for w in words if len(w) >= 4]
+        if len(longer) >= 2 and sum(_dictionary_uzbek(w) for w in longer) >= len(longer) * 0.6 \
+                and not any(w in RU_COMMON for w in words):
+            return "uz"
         return "ru"
-    uz = sum(w in UZ_WORDS or "o'" in w or "g'" in w for w in words)
+    uz = sum(w in UZ_WORDS or "o'" in w or "g'" in w or _dictionary_uzbek(w) for w in words)
     weak = sum(w in UZ_WEAK for w in words)
     if uz or (weak and not EN_STOP & set(words)):  # weak words only count when it doesn't look like English
         uz += weak
