@@ -98,3 +98,29 @@ def typo(text: str) -> tuple[str, str] | None:
     else:                       # drop a letter
         wrong = word[:i] + word[i + 1:]
     return text[:m.start()] + wrong + text[m.end():], word
+
+
+SPLIT_AT = re.compile(r"(?<=[.!?…])\s+|,\s+(?=(?:а|но|и|потом|кстати|короче|просто|так что|though|but|and|so|btw|lekin|keyin)\b)|\s+(?=(?:а ты|а у тебя|кстати|короче)\b)", re.I)
+
+
+def split_two(part: str) -> list[str]:
+    """One message -> the two you would have sent: people hit send at the end of a thought, not of a paragraph.
+    Splits at a sentence end or before "а / но / кстати…", only when both halves can stand alone."""
+    if len(part) < 18 or len(part.split()) < 4:
+        return [part]
+    best = None
+    for match in SPLIT_AT.finditer(part):
+        left, right = part[:match.start()].rstrip(" ,"), part[match.end():].strip()
+        if len(left.split()) < 1 or len(right.split()) < 2 or len(left) < 3:
+            continue
+        balance = abs(len(left) - len(right))
+        if best is None or balance < best[0]:
+            best = (balance, left, right)
+    if not best:  # no clear break: a plain comma will do ("круто, скинь скрин")
+        for match in re.finditer(r",\s+", part):
+            left, right = part[:match.start()].strip(), part[match.end():].strip()
+            if len(left) >= 3 and len(right.split()) >= 2:
+                return [left, right]
+        return [part]
+    left, right = best[1], best[2]
+    return [left.rstrip("."), right[:1].upper() + right[1:] if left[-1:] in ".!?…" or part[0].isupper() else right]

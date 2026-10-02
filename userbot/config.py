@@ -53,9 +53,18 @@ SUMMARY_TIME = os.environ.get("USERBOT_SUMMARY_TIME", "21:30")  # empty = no aut
 
 # Group chats: answer only when mentioned or replied to
 GROUPS = os.environ.get("USERBOT_GROUPS", "true").lower() in ("1", "true", "yes")
+# Your own other account(s): whatever they write to this account is an order, carried out without asking back.
+# @username or numeric id, comma-separated. A username is looked up once and then remembered by its numeric id
+# (state.json), so the right stays with that account even if the username later changes hands.
+COMMANDERS = [w.strip() for w in os.environ.get("USERBOT_COMMANDERS", "").split(",") if w.strip()]
+
 # Extra names people call you in groups, besides your first name and @username (comma-separated, any alphabet)
 NAME_WORDS = [w.strip().lower() for w in os.environ.get("USERBOT_NAMES", "").split(",") if w.strip()]
 GROUP_FRESH = 15 * 60            # a mention found by the group scan is answered only if it is this recent
+# People poking the account in a group for fun: after this many answers, further mentions are ignored for a while
+GROUP_PER_PERSON = 3             # answers to one person…
+GROUP_PER_GROUP = 6              # …and in one group overall…
+GROUP_WINDOW = 10 * 60           # …within this many seconds
 GROUP_CONTEXT = 15               # how many recent group messages the model sees
 
 # Voice messages are transcribed locally with Whisper (see voice.py)
@@ -143,6 +152,10 @@ NUDGE_AFTER_READ = (90, 300)       # they saw the question and stayed silent thi
 NUDGE_AFTER_UNREAD = (25 * 60, 45 * 60)  # they haven't even opened it: wait much longer
 NUDGE_MAX = 2                      # 1st time "?", 2nd time the question in other words; then let it go
 NUDGE_GIVE_UP = 3 * 3600           # a question older than this is forgotten
+
+# One thought per message: a reply with two thoughts goes out as two messages
+SPLIT_ON = True
+SPLIT_CHANCE = float(os.environ.get("USERBOT_SPLIT_CHANCE", "0.75"))
 
 # Someone floods the chat -> the same flood goes back at them
 SPAM_BACK = True

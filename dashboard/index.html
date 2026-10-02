@@ -60,6 +60,7 @@
   .row:hover, .chatrow:hover { background:var(--panel); }
   .time { color:var(--dim); font-variant-numeric:tabular-nums; }
   .badge { font-size:11px; padding:2px 7px; border-radius:20px; border:1px solid; justify-self:start; white-space:nowrap; }
+  .chatrow[hidden] { display:none; }
   .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
   .seg button { border:0; border-radius:0; background:transparent; } .seg button.on { background:var(--blue); color:#fff; }
   .row.them { border-left:3px solid var(--blue); } .row.bot { border-left:3px solid var(--green); background:rgba(60,180,110,.07); }
@@ -147,8 +148,8 @@
   <div id="chats"><div class="empty">Chats show up here once someone writes.</div></div>
 
   <h2>Groups</h2>
-  <div class="hint">Groups this account is in. Where the switch is on, the bot reads along and answers when someone writes your name, your @username, or replies to you — and only then.</div>
-  <div class="toggles" id="groups"><div class="empty" style="grid-column:1 / -1">The list appears a minute after the userbot starts.</div></div>
+  <div class="hint">Groups this account is in. "Answers when called" = the bot replies when someone writes your name, your @username, or replies to you — and only then. "Answer now" replies to the latest message there. A group you leave or are removed from disappears from this list within a minute.</div>
+  <div id="groups"><div class="empty">The list appears a minute after the userbot starts.</div></div>
 
   <h2>Decision log</h2>
   <div class="hint">Messages = only what people wrote and what the account sent. Everything = also why the bot did what it did. Problems = warnings and cancelled drafts.</div>
@@ -332,7 +333,13 @@ function renderChats() {
     const sel = row.querySelector("select");
     if (document.activeElement !== sel) sel.value = c.mode;
     row.querySelector(".state").textContent = c.waiting ? "writing a reply…" : c.held ? "left to you" : c.mode === "auto" ? "" : c.mode;
+    row.dataset.rank = c.waiting ? 0 : c.held ? 1 : c.mode !== "auto" ? 2 : 3;   // chats where something is going on come first
   }
+  if (!box.contains(document.activeElement)) {
+    const rows = [...chatRows.values()].sort((a, b) => a.dataset.rank - b.dataset.rank);
+    rows.forEach(row => box.appendChild(row));
+  }
+  fold("chats");
 }
 
 /* ---------- settings ---------- */
@@ -425,29 +432,51 @@ for (const b of $("view").querySelectorAll("button")) {
 /* ---------- groups ---------- */
 const groupEls = new Map();
 function renderGroups() {
-  const list = status.groups || [], box = $("groups");
-  if (!list.length) return;
+  const list = status.groups, box = $("groups");
+  if (!list) return;
+  if (!list.length) { box.innerHTML = '<div class="empty">This account is in no groups.</div>'; groupEls.clear(); return; }
   if (!groupEls.size) box.innerHTML = "";
+  const alive = new Set(list.map(g => g.id));
+  for (const [id, el] of groupEls) if (!alive.has(id)) { el.remove(); groupEls.delete(id); }   // removed from the group, or left it
   for (const g of list) {
-    let el = groupEls.get(g.id);
-    if (!el) {
-      el = document.createElement("button");
-      el.className = "toggle"; el.type = "button";
-      el.innerHTML = '<span class="txt"><span class="lbl"></span><span class="hnt"></span></span><span class="sw"></span>';
-      el.addEventListener("click", async () => {
-        const turnOn = !el.classList.contains("on");
-        el.classList.toggle("on", turnOn); el.classList.add("wait"); el.dataset.pending = "1";
-        await command("group", {chat: String(g.id), value: turnOn ? "on" : "off"});
-        setTimeout(() => { el.classList.remove("wait"); delete el.dataset.pending; pollStatus(); }, 2500);
-      });
-      groupEls.set(g.id, el); box.appendChild(el);
+    let row = groupEls.get(g.id);
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "chatrow";
+      row.innerHTML = `<span class="name"></span>
+        <select><option value="on">Answers when called</option><option value="off">Ignored</option></select>
+        <span class="state"></span><button class="answer">Answer now</button>
+        <input type="text" placeholder="Write into this group…"><button class="primary say">Send</button>`;
+      const sel = row.querySelector("select"), input = row.querySelector("input");
+      sel.addEventListener("change", () => { row.dataset.pending = String(Date.now()); command("group", {chat: String(g.id), value: sel.value}); });
+      row.querySelector(".answer").addEventListener("click", () => command("ganswer", {chat: String(g.id)}));
+      const say = () => { if (input.value.trim()) { command("gsay", {chat: String(g.id), text: input.value}); input.value = ""; } };
+      row.querySelector(".say").addEventListener("click", say);
+      input.addEventListener("keydown", ev => { if (ev.key === "Enter") say(); });
+      groupEls.set(g.id, row); box.appendChild(row);
     }
-    el.querySelector(".lbl").textContent = g.name;
-    if (!el.dataset.pending) {
-      el.classList.toggle("on", g.on);
-      el.querySelector(".hnt").textContent = g.on ? "answers when you are called" : "ignored";
-    }
+    row.querySelector(".name").textContent = g.name;
+    if (!row.dataset.pending || Date.now() - Number(row.dataset.pending) > 4000) row.querySelector("select").value = g.on ? "on" : "off";
   }
+  fold("groups");
+}
+
+/* ---------- show more / show less ---------- */
+const FOLD = 4, open = {chats: false, groups: false};
+function fold(id) {
+  const box = $(id), rows = [...box.querySelectorAll(":scope > .chatrow")];
+  rows.forEach((row, i) => {   // never hide the row you are typing in
+    const busy = row.contains(document.activeElement) || (row.querySelector("input") || {}).value;
+    row.hidden = !open[id] && i >= FOLD && !busy;
+  });
+  let btn = $(id + "more");
+  if (!btn) {
+    btn = document.createElement("button"); btn.id = id + "more"; btn.style.marginTop = "8px";
+    btn.addEventListener("click", () => { open[id] = !open[id]; fold(id); });
+    box.after(btn);
+  }
+  btn.hidden = rows.length <= FOLD;
+  btn.textContent = open[id] ? "Show less" : `Show all ${rows.length}`;
 }
 
 async function poll() {

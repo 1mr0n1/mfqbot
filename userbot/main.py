@@ -37,7 +37,7 @@ from datetime import datetime, timedelta
 
 import httpx
 from telethon import TelegramClient, errors, events, functions
-from telethon.tl.types import InputDialogPeer, ReactionEmoji, User
+from telethon.tl.types import ChannelForbidden, ChatForbidden, InputDialogPeer, ReactionEmoji, User
 
 from . import config as C
 from . import daylog, judge, lang, media, memory, pfp, punct, quirks, recall, rhythm, salam, toggles, voice
@@ -71,6 +71,8 @@ group_names: dict[int, str] = {}        # groups the account is in, for the dash
 group_seen: dict[int, int] = {}         # chat_id -> newest message id already looked at
 group_done: set[tuple[int, int]] = set()  # (chat_id, message id) mentions that already got their answer
 asked: dict[int, dict] = {}             # chat_id -> your question that is still waiting for an answer
+commander_ids: set[int] = set()         # your own other accounts: what they write is an order
+commanding: set[int] = set()            # chats where such an order is being carried out right now
 recent_incoming: dict[int, deque] = {}  # chat_id -> their latest messages, to notice a flood
 spam_until: dict[int, float] = {}       # chat_id -> no spamming back before this time
 
@@ -920,6 +922,16 @@ async def reply_flow(chat_id: int, contact: User):
                                                     f"“{their_text[:300]}”\nThat one is yours.")
                     return
 
+        # Two thoughts, two messages — the way people text.
+        if from_model and C.SPLIT_ON and not formal and random.random() < C.SPLIT_CHANCE:
+            texts = [p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p)]
+            if len(texts) == 1:
+                halves = [punct.apply(h, punct_profile(contact)) for h in quirks.split_two(texts[0])]
+                if len(halves) == 2 and all(halves):
+                    at = parts.index(texts[0])
+                    parts[at:at + 1] = halves
+                    reply = "\n".join(parts)
+
         # Last gate: whatever the rewrites above produced, it still may not promise or claim things for you.
         if from_model:
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
@@ -1349,6 +1361,56 @@ async def on_outgoing(event):
         cancel(event.chat_id)
 
 
+async def pin_commanders():
+    """USERBOT_COMMANDERS -> numeric ids. A username is resolved once; after that the id is what counts."""
+    for ref in C.COMMANDERS:
+        key = ref.lstrip("@").lower()
+        if key.lstrip("-").isdigit():
+            commander_ids.add(int(key))
+            continue
+        if key not in state.commanders:
+            try:
+                entity = await client.get_entity(key)
+            except Exception as e:
+                log.warning("Commander %s could not be looked up (%s) — ignored", ref, e.__class__.__name__)
+                continue
+            if not isinstance(entity, User) or entity.bot or entity.is_self:
+                log.warning("Commander %s is not another person's account — ignored", ref)
+                continue
+            state.commanders[key] = entity.id
+            state.save()
+            log.info("Commander @%s pinned to id %s (%s)", key, entity.id, full_name(entity))
+        commander_ids.add(state.commanders[key])
+    if commander_ids:
+        trace.emit("system", "", f"Orders are accepted from {len(commander_ids)} other account(s) of yours, without asking back")
+
+
+async def obey(event, order: str) -> bool:
+    """A message from your other account: if it is an order, carry it out and answer with the result.
+    -> False if it was just conversation (then it is answered like any other message)."""
+    chat_id = event.chat_id
+    commanding.add(chat_id)
+    try:
+        async with pilot_busy:
+            ctx = SimpleNamespace(client=client, http=http, state=state, me=me, send=send_as_bot, set_mode=set_chat_mode)
+            try:
+                report = await pilot.run(ctx, order, chat_id, trusted=True, may_chat=True)
+            except Exception:
+                log.exception("Order from a commander failed: %r", order)
+                report = "не получилось, что-то сломалось"
+        if report is None:
+            return False
+        if COMMAND_RE.search(report):
+            report = report.replace(".ai", "ai")
+        await client.send_read_acknowledge(chat_id)
+        await send_as_bot(chat_id, report, reply_to=event.id)
+        state.mark_handled(chat_id, event.id)
+        trace.emit("sent", names.get(chat_id, "your other account"), report[:300])
+        return True
+    finally:
+        commanding.discard(chat_id)
+
+
 def flood_from(chat_id: int, msg) -> list:
     """Their messages of the last few seconds, if there are enough of them to call it spam."""
     burst = recent_incoming.setdefault(chat_id, deque(maxlen=C.SPAM_MAX))
@@ -1408,6 +1470,10 @@ async def on_incoming(event):
     asked.pop(event.chat_id, None)  # they answered (or at least wrote): nothing to ask again
     trace.emit("incoming", who, describe(event.message)[:300])
     spawn(push_history(event.chat_id))
+    if sender.id in commander_ids and (event.raw_text or "").strip():
+        if await obey(event, event.raw_text.strip()):
+            return
+        forced.add(event.chat_id)  # just talking: answered normally, but nothing is withheld from yourself
     if not state.is_active(event.chat_id, C.REPLY_MODE):
         trace.emit("decision", who, "Not replying — auto-replies are paused" if state.is_paused()
                    else "Not replying — auto-replies are off for this chat")
@@ -1458,6 +1524,38 @@ def addressed_to_me(msg) -> bool:
     return bool(getattr(msg, "mentioned", False) or name_re().search(msg.raw_text or ""))
 
 
+group_tasks: dict[tuple[int, int], asyncio.Task] = {}  # (group, message id) -> the answer being written; several at once
+
+
+def answer_in_group(msg, sender, force: bool = False):
+    """Every person who called you gets their own answer, written side by side (each quotes its message)."""
+    key = (msg.chat_id, msg.id)
+    if key not in group_tasks:
+        group_tasks[key] = asyncio.create_task(group_reply_flow(msg, sender, force))
+
+
+def cancel_group(chat_id: int):
+    for key in [k for k in group_tasks if k[0] == chat_id]:
+        group_tasks.pop(key).cancel()
+
+
+mention_log: dict[int, list[tuple[float, int]]] = {}   # group -> (time, who) of mentions that got an answer
+
+
+def mention_allowed(chat_id: int, sender_id: int, who: str = "") -> bool:
+    """A few answers, then silence: someone calling you over and over in a group stops getting replies."""
+    now = time.time()
+    recent = mention_log[chat_id] = [(t, s) for t, s in mention_log.get(chat_id, []) if now - t < C.GROUP_WINDOW]
+    mine = sum(1 for _, s in recent if s == sender_id)
+    if mine >= C.GROUP_PER_PERSON or len(recent) >= C.GROUP_PER_GROUP:
+        if mine == C.GROUP_PER_PERSON or len(recent) == C.GROUP_PER_GROUP:  # say it once, not on every poke
+            trace.emit("decision", who, "Called too many times in this group — ignoring further mentions for a while")
+            recent.append((now, sender_id))
+        return False
+    recent.append((now, sender_id))
+    return True
+
+
 def group_ready(chat_id: int) -> bool:
     return C.GROUPS and not state.is_paused() and chat_id not in state.disabled and not rhythm.asleep()
 
@@ -1465,32 +1563,38 @@ def group_ready(chat_id: int) -> bool:
 async def scan_groups():
     """Groups the account is in → the dashboard list; and mentions the live feed missed get their answer.
     Only groups with something new are opened, and only their latest messages are read."""
+    current: dict[int, str] = {}
     async for dialog in client.iter_dialogs(limit=60):
-        if not dialog.is_group:
+        gone = isinstance(dialog.entity, (ChatForbidden, ChannelForbidden)) or getattr(dialog.entity, "left", False) \
+            or getattr(dialog.entity, "deactivated", False)
+        if not dialog.is_group or gone:  # kicked out, left, or the group was closed: not yours any more
             continue
-        group_names[dialog.id] = dialog.name
+        current[dialog.id] = dialog.name
         last, since = dialog.message, group_seen.get(dialog.id, 0)
         if not last or last.id <= since:
             continue
         group_seen[dialog.id] = last.id
-        if not group_ready(dialog.id) or dialog.id in pending:
+        if not group_ready(dialog.id):
             continue
         messages = await client.get_messages(dialog.id, limit=12, min_id=since)
         answered = {m.reply_to_msg_id for m in messages if m.out and m.reply_to_msg_id}
-        for msg in messages:  # newest first: one answer per look, to the latest time you were called
+        for msg in reversed(messages):  # oldest first: everyone who called you and got no answer yet
             if msg.out or (dialog.id, msg.id) in group_done or msg.id in answered or not addressed_to_me(msg):
                 continue
             if time.time() - msg.date.timestamp() > C.GROUP_FRESH:
-                break
+                continue
             sender = await msg.get_sender()
             if isinstance(sender, User) and not sender.bot:
                 group_done.add((dialog.id, msg.id))
+                if sender.id not in commander_ids and not mention_allowed(dialog.id, sender.id, f"{full_name(sender)} @ {dialog.name}"):
+                    continue
                 log.info("%s: found a missed mention in the group scan", dialog.name)
-                pending[dialog.id] = asyncio.create_task(group_reply_flow(msg, sender))
-            break
+                answer_in_group(msg, sender)
+    group_names.clear()  # a group you were removed from, or left, drops off the dashboard list
+    group_names.update(current)
 
 
-async def group_reply_flow(event, sender: User):  # event: the Message (or NewMessage event) that addressed you
+async def group_reply_flow(event, sender: User, force: bool = False):  # event: the Message (or NewMessage event)
     """Someone mentioned you or replied to you in a group: answer that message, quoting it."""
     chat_id = event.chat_id
     message = getattr(event, "message", None)
@@ -1498,16 +1602,16 @@ async def group_reply_flow(event, sender: User):  # event: the Message (or NewMe
     chat = await event.get_chat()
     who = f"{full_name(sender)} @ {getattr(chat, 'title', 'group')}"
     try:
-        await asyncio.sleep(rhythm.wait_seconds(chat_id) + rand(C.DEBOUNCE))
+        await asyncio.sleep(0 if force else rhythm.wait_seconds(chat_id) + rand(C.DEBOUNCE))
         text = event.raw_text or ""
-        if identity_question([message]) == "only":
+        if not force and identity_question([message]) == "only":
             trace.emit("decision", who, "They asked who/what is answering — ignoring it, no reply")
             daylog.record("ignored", who, text)
             return
-        if C.HANDOFF and await judge.sensitive_reason(http, full_name(me), [message], keywords_only=True):
+        if not force and C.HANDOFF and await judge.sensitive_reason(http, full_name(me), [message], keywords_only=True):
             trace.emit("warning", who, "Sensitive topic in a group — not replying")
             return
-        if TEACHER_RE.search(text):  # a teacher or another adult speaking formally, in front of the whole group
+        if not force and TEACHER_RE.search(text):  # a teacher or another adult speaking formally, in front of everyone
             trace.emit("incoming", who, text[:300])
             trace.emit("warning", who, "Formal message to you in a group (a teacher?) — not answering, telling you instead")
             daylog.record("handoff", who, f"formal message in a group: {text[:200]}")
@@ -1583,11 +1687,14 @@ async def group_reply_flow(event, sender: User):  # event: the Message (or NewMe
         rhythm.online_for_a_bit(client)
     except asyncio.CancelledError:
         raise
+    except (errors.ChannelPrivateError, errors.ChatWriteForbiddenError, errors.UserBannedInChannelError) as e:
+        log.info("%s: can't write there any more (%s)", who, e.__class__.__name__)
+        trace.emit("warning", who, "Can't write in this group any more (removed, banned or muted) — taking it off the list")
+        group_names.pop(chat_id, None)
     except Exception:
         log.exception("%s: group reply failed", who)
     finally:
-        if pending.get(chat_id) is asyncio.current_task():
-            pending.pop(chat_id)
+        group_tasks.pop((chat_id, event.id), None)
 
 
 @client.on(events.NewMessage(incoming=True))
@@ -1601,11 +1708,16 @@ async def on_group_mention(event):
         return
     group_done.add((event.chat_id, event.id))
     group_seen[event.chat_id] = max(group_seen.get(event.chat_id, 0), event.id)
+    if event.sender_id in commander_ids and (event.raw_text or "").strip():
+        order = name_re().sub(" ", event.raw_text).strip(" ,:")
+        if order and await obey(event, order):
+            return
     sender = await event.get_sender()
     if not isinstance(sender, User) or sender.bot:
         return
-    cancel(event.chat_id)
-    pending[event.chat_id] = asyncio.create_task(group_reply_flow(event, sender))
+    if sender.id not in commander_ids and not mention_allowed(event.chat_id, sender.id, full_name(sender)):
+        return
+    answer_in_group(event.message, sender)
 
 
 async def push_history(chat_id: int):
@@ -1656,8 +1768,29 @@ async def run_command(cmd: dict):
             state.save()
         else:
             state.disable(gid)
-            cancel(gid)
+            cancel_group(gid)
         trace.emit("system", group_names.get(gid, str(gid)), f"Group replies {'ON' if on else 'off'} (set from the dashboard)")
+    elif kind in ("gsay", "ganswer") and str(cmd.get("chat", "")).lstrip("-").isdigit():  # a group row
+        gid = int(cmd["chat"])
+        gname = group_names.get(gid, str(gid))
+        if kind == "gsay" and cmd.get("text", "").strip():  # your own words into the group
+            text = cmd["text"].strip()
+            cancel_group(gid)
+            trace.emit("decision", gname, "Sending the text you wrote on the dashboard")
+            await type_like_a_person(gid, text)
+            await send_as_bot(gid, text)
+            trace.emit("sent", gname, text)
+            daylog.record("replied", gname, text, them="(you wrote this on the dashboard)")
+        elif kind == "ganswer":  # answer the latest message there, called by name or not
+            last = next((m for m in await client.get_messages(gid, limit=15) if not m.out and (m.raw_text or m.media)), None)
+            sender = await last.get_sender() if last else None
+            if not last or not isinstance(sender, User):
+                trace.emit("warning", gname, "Nothing in that group to answer")
+            else:
+                cancel_group(gid)
+                group_done.add((gid, last.id))
+                trace.emit("decision", gname, "You asked for an answer in the group — writing one now")
+                answer_in_group(last, sender, force=True)
     elif kind == "do" and cmd.get("text", "").strip():
         spawn(operate(cmd["text"].strip()))
     elif chat_id is None:
@@ -1851,7 +1984,8 @@ async def reply_to_unread(limit: int = 0) -> int:
         if not isinstance(contact, User) or contact.bot or contact.is_self or contact.deleted \
                 or contact.id == TELEGRAM_SERVICE_ID:
             continue
-        if not last or last.out or dialog.id in pending or not state.is_active(dialog.id, C.REPLY_MODE):
+        if not last or last.out or dialog.id in pending or dialog.id in commanding \
+                or not state.is_active(dialog.id, C.REPLY_MODE):
             continue
         if state.is_handled(dialog.id, last.id) or state.handed_off(dialog.id):
             continue  # already answered, skipped, reacted to, or handed to you
@@ -1890,6 +2024,7 @@ async def main():
                 and dialog.entity.id != TELEGRAM_SERVICE_ID:
             names[dialog.id] = full_name(dialog.entity)
             contacts[dialog.id] = dialog.entity
+    await pin_commanders()
     trace.emit("system", "", f"Userbot started as {full_name(me)} — mode: {C.REPLY_MODE}, models: {', '.join(C.MODELS)}")
     await reply_to_unread()
     spawn(scan_groups())
