@@ -139,8 +139,8 @@ def split_two(part: str) -> list[str]:
         balance = abs(len(left) - len(right))
         if best is None or balance < best[0]:
             best = (balance, left, right)
-    if not best:  # no clear break: a plain comma will do ("круто, скинь скрин")
-        for match in re.finditer(r",\s+", part):
+    if not best:  # no clear break: a plain comma will do ("круто, скинь скрин") — but a list stays in one piece
+        for match in re.finditer(r",\s+", part) if part.count(",") == 1 else ():
             left, right = part[:match.start()].strip(), part[match.end():].strip()
             if len(left) >= 3 and len(right.split()) >= 2:
                 return [left, right]
