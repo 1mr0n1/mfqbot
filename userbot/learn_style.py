@@ -36,7 +36,7 @@ EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF☀-➿\U0001F1E6-\U0001F1FF]")
 WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 URL_RE = re.compile(r"https?://\S+")
 # Messages with slurs are left out of learning so the userbot never repeats them to other people.
-SLUR_RE = re.compile(r"\bn[i1!]+gg(?:er|a|ah|az|as|ers|uh)s?\b|\bnibba\w*|\bниг+ер\w*|\bниг+а\b", re.I)
+SLUR_RE = re.compile(r"\bn[i1!]+gg\w*|\bnibba\w*|\bнигг\w*|\bнигер(?!и)\w*|\bнига\b", re.I)
 
 
 def usable(text: str) -> bool:
