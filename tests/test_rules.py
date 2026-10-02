@@ -90,7 +90,11 @@ class Judge(Cases):
             ("Убери в комнате", "Буду убирать", "commitment"), ("Купи хлеб по дороге", "Хорошо, куплю", "commitment"),
             ("send it", "Sure, sending now", "commitment"), ("камрон ты с нами?", "Го, жду в кс", "commitment"),
             ("ты лох?", "сам такой", None), ("сколько будет 2+2?", "4", None), ("кто написал войну и мир?", "Толстой написал", None),
-            ("ты спишь?", "Нет, не сплю", None), ("Когда домой приду я тебе напишу", "окей", None), ("как дела?", "дела норм", None)])
+            ("ты спишь?", "Нет, не сплю", None), ("Когда домой приду я тебе напишу", "окей", None), ("как дела?", "дела норм", None),
+            ("Premium qimmat ekan", "50 tashay", "commitment"), ("у меня денег нет", "скину 20к", "commitment"),
+            ("U menya", "Ha, uydaman", "situation"), ("ало", "я дома", "situation"), ("го в кс", "не, я дома посижу", None),
+            ("Dali dengi emas", "300-350$ atrofida", "situation"), ("сколько стоит айфон?", "999$ вроде", None),
+            ("я купил за 300$", "300$ норм цена", None), ("как дела", "дам знать", None)])
 
     def test_dry(self):
         dry = lambda *texts: judge.dry([msg(t) for t in reversed(texts)] + [msg("как дела?", out=True)])
@@ -281,7 +285,8 @@ class LateAdditions(Cases):
         cases = [("привет как дела", "ru"), ("hello how are you", "en"), ("privet kak dela", "ru-latn"), ("idk yet, lemme check", "en"),
                  ("не знаю ещё, потом скажу", "ru"), ("завтра контрольная по физике", "ru"), ("idk man", "en"),
                  ("lol man ur trash", "en"), ("norm a u tebya", "ru-latn"), ("нога болит после футбола", "ru"),
-                 ("Яхши, рахмат", "uz"), ("Отанг уйдами?", "uz"), ("хорошо, рахмат тебе", "ru"), ("qalesan", "uz")]
+                 ("Яхши, рахмат", "uz"), ("Отанг уйдами?", "uz"), ("хорошо, рахмат тебе", "ru"), ("qalesan", "uz"),
+                 ("brew установил ?", "ru"), ("wifi работает?", "ru"), ("Go to windows", "en")]
         if judge.in_uz_dictionary("kitob"):  # needs the dictionary: .venv/bin/python -m userbot.get_uz_dictionary
             cases += [("Bilmadim, qarayman", "uz"), ("Tel qilaman", "uz"), ("Xop, rahmat", "uz"), ("Мактабга бордингми", "uz"),
                       ("maktabga bordingmi", "uz"), ("Hozir dars qilmayapman", "uz"), ("телефон машина компьютер", "ru")]
@@ -290,6 +295,14 @@ class LateAdditions(Cases):
     def test_relative_names_go_into_contacts_with_their_telegram_name(self):
         self.assertTrue(people.RELATIVE_RE.search("Дедушка"))
         self.assertEqual(people.RELATIVE_RE.search("Это отец твоей матери").group(0), "отец твоей матери")
+
+
+class Sums(Cases):
+    def test_arithmetic_is_worked_out_not_guessed(self):
+        self.assertIn("847 * 93 = 78771", memory.sums("а теперь реши 847*93 за 2 секунды"))
+        self.assertIn("= 3.75", memory.sums("15 / 4 сколько"))
+        for text in ["приду в 7:30", "счёт 3:1", "позвони 90-123-45-67", "1/0", "как дела"]:
+            self.assertEqual(memory.sums(text), "", text)
 
 
 class MoodAndPresence(Cases):

@@ -449,6 +449,18 @@ NOT_KNOWN_HINT = (
     "know yet or will look and tell them — or ask them back. No invented details.\n")
 
 
+# "я дома", "ha, uydaman", "i'm at school": where you are, stated flat — nobody told the account
+WHERE_I_AM_RE = re.compile(
+    r"^\W*(?:(?:да|ага|угу|ну|ha|xa|yes|yeah|yep)\W+)?(?:я\s+)?(?:уже\s+|щас\s+|сейчас\s+)?(дома|в\s+школе|на\s+уроке|на\s+улице|в\s+пути|в\s+дороге)\W*$"
+    r"|\b(uyda|maktabda|darsda|yo['ʻ‘’]?lda|ko['ʻ‘’]?chada|ishda)man\b|^\W*(?:(?:yes|yeah|yep)\W+)?i'?m\s+(at\s+)?(home|school)\W*$", re.I)
+# an amount of money: "50$", "300-350$", "275.000 сум", "20к"
+AMOUNT_RE = re.compile(r"\$\s?\d+|\d[\d.,\s-]*\s?(\$|usd|сум\w*|so['ʻ‘’]?m|sum\b|ming\b|тыс\w*|руб\w*|доллар\w*|бакс\w*|[кk]\b)", re.I)
+# offering to send or give money: a decision that is yours
+PAY_RE = re.compile(r"\b(скину|кину|переведу|отправлю|одолжу|дам(?!\s+знать)|tashl?ay(man)?|tashl?ab\s+beraman|beraman|yuboraman|"
+                    r"o['ʻ‘’]?tkazaman|i'?ll\s+(send|give|pay|lend))\b", re.I)
+MONEY_WORD_RE = re.compile(r"деньг|денег|бабк|бабл|\bpul\w*|\bmoney\b|\bcash\b", re.I)
+
+
 def made_up(them: str, draft: str, known_today: str = "") -> bool:
     """They asked about your situation right now and the draft answers with specifics nobody gave the account."""
     text = draft.strip()
@@ -484,6 +496,8 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
         return "claim"
     if UNSURE_RE.search(text):
         return None  # already non-committal
+    if PAY_RE.search(text) and (AMOUNT_RE.search(text) or MONEY_WORD_RE.search(text) or re.search(r"\d", text)):
+        return "commitment"  # "50 tashay", "скину 20к"
     if RELAY_RE.search(them) and RELAY_OK_RE.search(text):
         return None  # "tell your dad…" → "ok, I'll tell him" is fine
     if PLAN_RE.search(them) and (COMMIT_RE.search(text) or AFFIRM_RE.match(text)):
@@ -494,6 +508,12 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
         asked = set(re.findall(r"[^\W\d_]{3,}", them.lower())) - {"ты", "вы", "это", "что", "как", "the", "you"}
         if CLAIM_RE.match(text) or (first and first.group(1) in asked and "?" in them):
             return "claim"
+    if not known_today and C.GROUNDED:
+        if WHERE_I_AM_RE.search(text):
+            return "situation"
+        digits = lambda s: set(re.findall(r"\d+", s))
+        if AMOUNT_RE.search(text) and "?" not in them and not (digits(text) & digits(them)):
+            return "situation"  # a sum of money nobody asked about or mentioned
     if C.GROUNDED and made_up(them, draft, known_today):
         return "situation"
     return None

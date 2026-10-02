@@ -70,7 +70,9 @@ IDENTITY_CLAIM_RE = re.compile(
 # refusing out loud ("I won't answer that") sounds like a bot too — such lines are dropped
 REFUSAL_RE = re.compile(
     r"не\s+буду\s+(отвечать|обсуждать|говорить)|не\s+хочу\s+(отвечать|обсуждать|вступать|говорить об этом)|без\s+комментариев"
-    r"|(won'?t|not\s+going\s+to|refuse\s+to|rather\s+not)\s+(answer|say|discuss|talk)|no\s+comment|javob\s+bermayman", re.I)
+    r"|(won'?t|not\s+going\s+to|refuse\s+to|rather\s+not)\s+(answer|say|discuss|talk)|no\s+comment|javob\s+bermayman"
+    r"|\bi\s+can(?:'?t|not)\s+(answer|help|assist|respond|comply|do\s+that)|^\W*i'?m\s+sorry\W*$|i'?m\s+sorry,?\s+(but\s+)?i\b"
+    r"|я\s+не\s+могу\s+(ответить|помочь|с\s+этим|на\s+это)|извини(те)?,?\s+(но\s+)?я\s+не\s+могу|yordam\s+bera\s+olmayman", re.I)
 
 
 # words that belong to the accusation itself ("I know you're a bot, admit it") — not something else to answer

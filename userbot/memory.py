@@ -60,6 +60,22 @@ def age() -> int | None:
     return now.tm_year - year - ((now.tm_mon, now.tm_mday) < (month, day))
 
 
+SUM_RE = re.compile(r"(?<![\w.,/-])(\d{1,9}(?:[.,]\d{1,4})?)\s*([+\-−*x×х/÷])\s*(\d{1,9}(?:[.,]\d{1,4})?)(?![\w.,]*\d)(?!\s*[-−/]\s*\d)")
+
+
+def sums(text: str) -> str:
+    """ "реши 847*93": the result is worked out here and handed to the model, which is bad at arithmetic."""
+    found = []
+    for a, op, b in SUM_RE.findall(text):
+        x, y = float(a.replace(",", ".")), float(b.replace(",", "."))
+        if op in "/÷" and not y:
+            continue
+        value = x + y if op == "+" else x - y if op in "-−" else x * y if op in "*x×х" else x / y
+        found.append(f"{a} {op} {b} = {round(value, 4):g}" if abs(value) < 1e15 else "")
+    found = [f for f in found if f]
+    return ("\nWorked out for you (use these exact results if you answer the sum): " + "; ".join(found) + ".\n") if found else ""
+
+
 def right_age(their_text: str, part: str) -> str:
     """Asked how old you are, the number in the answer is your real age — whatever the model or an old chat says."""
     years = age()

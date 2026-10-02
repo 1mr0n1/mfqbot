@@ -120,6 +120,8 @@ def _russian_in_latin(word: str) -> bool:
         vocab = judge._vocab or set()
     except Exception:
         return False
+    if judge._is_english(word):
+        return False  # "windows", "linux"
     return any(_to_cyrillic(word, y) in vocab for y in ("й", "ы", "и"))
 
 
@@ -154,7 +156,7 @@ def detect(text: str) -> str | None:
         if re.search(pattern, text):
             return code
     cyr = sum(bool(re.search("[\u0400-\u04ff]", w)) for w in words)
-    if cyr > len(words) / 2:
+    if cyr >= len(words) / 2:  # "brew установил?", "wifi работает?": a Latin name in a Russian sentence
         for code, marks in CYRILLIC_MARKS:
             if set(marks) & set(text):
                 return code

@@ -338,6 +338,7 @@ async def reply_flow(chat_id: int, contact: User):
         intro = await who_is_this(chat_id, contact, who, history, their_text)
         asking_who = intro == people.ASK_HINT
         hint += intro
+        hint += memory.sums(their_text)
         researched = None
         if C.LOOKUP_ON and not asking_who:
             researched = await lookup.research(http, history, their_text)
@@ -775,6 +776,13 @@ async def reply_flow(chat_id: int, contact: User):
         target = next((m for m in history if not m.out), None)
         worth_it = bool(target) and "?" not in (target.raw_text or "") and (
             getattr(target, "photo", None) or REACTABLE_RE.search(target.raw_text or ""))
+        if not sent_count and from_model and target and not formal:
+            try:  # the only thing to send was a GIF / sticker that couldn't be found: a reaction instead of silence
+                await app.client(functions.messages.SendReactionRequest(peer=chat_id, msg_id=target.id,
+                                                                    reaction=[ReactionEmoji(emoticon="😁")]))
+                trace.emit("sent", who, "[reaction 😁] on their message")
+            except errors.RPCError:
+                pass
         if sent_count and from_model and not formal and worth_it and random.random() < C.EXTRA_REACTION_CHANCE:
             if target:  # people also just tap a reaction on a photo, a joke, good news
                 emoji = "❤" if getattr(target, "photo", None) or random.random() < 0.3 else "👍"
