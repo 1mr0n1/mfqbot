@@ -13,7 +13,7 @@ from telethon.tl.types import InputDialogPeer, ReactionEmoji, User
 from . import config as C
 from . import daylog, judge, lang, media, memory, pfp, punct, quirks, rhythm, salam, voice
 from . import people, trace
-from . import app
+from . import app, lookup
 from .app import TELEGRAM_SERVICE_ID, asked, commander_ids, commanding, contacts, forced, full_name, hold_draft, http, label, log, names, our_ids, our_texts, owner_quiet_in, pacing_on, pending, push_history, rand, recent_incoming, revives, send_as_bot, sent_by_us, spam_until, spawn, state, to_chat_messages, type_like_a_person
 from .drafting import FORCE_LANG, contact_style_path, generate, persona, punct_profile, style_block, style_stats
 from .wording import IDENTITY_HINT, answer_each, clean_reply, identity_ignored, identity_question, looks_safe, split_reply, stale_parts
@@ -269,6 +269,12 @@ async def reply_flow(chat_id: int, contact: User):
         intro = await who_is_this(chat_id, contact, who, history, their_text)
         asking_who = intro == people.ASK_HINT
         hint += intro
+        researched = None
+        if C.LOOKUP_ON and not asking_who:
+            researched = await lookup.research(http, history, their_text)
+            if researched:
+                hint += researched[1]
+                trace.emit("decision", who, f"Looked it up before answering: {researched[0]}")
         due = people.due_thread(chat_id) if C.REMEMBER else None
         if due:
             hint += people.thread_hint(due)
@@ -415,6 +421,8 @@ async def reply_flow(chat_id: int, contact: User):
             # It must not agree to plans or claim what you did or didn't do: rewrite once, then use a neutral phrase.
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
             over = None if answer_each(several, parts, fixed) else judge.overreach(their_text, said, memory.today_note())
+            if researched and over in ("situation", "claim"):
+                over = None  # "Белл получил патент в 1876" is the looked-up fact, not something about your own day
             if over:
                 trace.emit("decision", who, f"Draft made a {over} I can't back up (“{said[:60]}”) — rewriting")
                 again = clean_reply(await generate(history, contact, hint + (
@@ -450,6 +458,8 @@ async def reply_flow(chat_id: int, contact: User):
             # You text short. A rambling draft is rewritten once, then cut down if it's still too long.
             limit, max_parts = quirks.length_limits(style_stats(contact), their_text)
             max_parts = max(max_parts, len(several))
+            if researched:
+                limit = max(limit * 2, 160)  # a fact with its backing needs a little more room
             text_parts = [p for p in parts if not media.MEDIA_LINE_RE.match(p)]
             if any(len(p) > limit for p in text_parts) or len(text_parts) > max_parts + 1:
                 trace.emit("decision", who, f"Draft too long ({max(map(len, text_parts))} chars) — rewriting it shorter")
@@ -532,6 +542,12 @@ async def reply_flow(chat_id: int, contact: User):
             if not parts:
                 return
 
+        # They asked for proof and something was found: the source goes along, as its own message.
+        if from_model and researched and researched[2] and lookup.PROOF_RE.search(their_text) \
+                and not any("http" in p for p in parts):
+            parts = parts[:1] + [researched[2]]
+            reply = "\n".join(parts)
+
         # An unknown person must actually be asked who they are, even if the model forgot to.
         if from_model and asking_who and not any(people.ASKS_WHO_RE.search(p) for p in parts):
             parts = parts[:1] + [people.WHO_LINES.get(lang.base(lang.detect(their_text)), people.WHO_LINES["ru"])]
@@ -552,6 +568,8 @@ async def reply_flow(chat_id: int, contact: User):
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
             late = None if answer_each(several, parts, fixed) or not said \
                 else judge.overreach(their_text, said, memory.today_note())
+            if researched and late in ("situation", "claim"):
+                late = None
             if late:
                 neutral = judge.dodge(late, lang.base(lang.detect(their_text)))
                 trace.emit("decision", who, f"A rewrite still made a {late} (“{said[:50]}”) — sending “{neutral}” instead")

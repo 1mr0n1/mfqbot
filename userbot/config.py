@@ -157,6 +157,8 @@ NUDGE_GIVE_UP = 3 * 3600           # a question older than this is forgotten
 SPLIT_ON = True
 SPLIT_CHANCE = float(os.environ.get("USERBOT_SPLIT_CHANCE", "0.75"))
 
+LOOKUP_ON = True               # a checkable fact in dispute is looked up on the web before answering
+
 # People
 INTRO_ON = os.environ.get("USERBOT_INTRO", "true").lower() in ("1", "true", "yes")  # unknown person -> "кто это?"
 ADD_CONTACTS = True            # once they say who they are, save them to your Telegram contacts under that name

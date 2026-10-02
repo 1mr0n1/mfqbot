@@ -24,6 +24,7 @@ TOGGLES = {
     "vision":   ("VISION",          "See photos",           "Passes incoming photos to a model that can see them", "Abilities"),
     "voice":    ("VOICE_TRANSCRIBE", "Hear voice messages", "Transcribes voice and round-video messages on this Mac", "Abilities"),
     "intro":    ("INTRO_ON",        "Ask who it is",        "An unknown person is asked who they are, then saved to contacts", "Abilities"),
+    "lookup":   ("LOOKUP_ON",       "Look facts up",        "A fact about the world in dispute is checked on the web before answering", "Abilities"),
     "remember": ("REMEMBER",        "Notes about people",   "Keeps facts people state about themselves", "Abilities"),
     "groups":   ("GROUPS",          "Group mentions",       "In groups, answers when you are mentioned or replied to", "Abilities"),
     "pfp":      ("PFP_FROM_CHATS",  "Profile photo on request", "Sets a photo someone sends and asks you to use", "Abilities"),
