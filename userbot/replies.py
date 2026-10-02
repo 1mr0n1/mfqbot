@@ -243,7 +243,7 @@ async def reply_flow(chat_id: int, contact: User):
         if not reason and chat_id in state.manual and not force:
             reason = "this chat is set to manual (.ai on to change)"
         if not reason and C.HANDOFF and not force and not contact_style_path(contact) \
-                and TEACHER_RE.search(their_text) and not judge.closer_action(history):
+                and TEACHER_RE.search(their_text) and not judge.closer_action(history, state.handled.get(str(chat_id), 0)):
             reason = "a formal message (teacher / official) — better answered by you"
         if reason:  # this one is yours: don't answer, don't even mark it read
             state.hand_off(chat_id, C.HANDOFF_HOLD)
@@ -307,11 +307,17 @@ async def reply_flow(chat_id: int, contact: User):
                 return
 
         # Dry answers in a live conversation: come up with a topic instead of a 👍 (a couple of tries, then let it go)
-        is_dry = judge.dry(history)
+        is_dry = judge.dry(history, state.handled.get(str(chat_id), 0))
         ours = next((m for m in history if m.out), None)
-        keep_going = (C.KEEP_TALKING and is_dry and not force and not greeting.reply and not greeting.sticker
-                      and not photo_msg and identity is None and not quirks.is_formal(history)
-                      and ours is not None and time.time() - ours.date.timestamp() <= C.REVIVE_WINDOW
+        # "Answer now" overrules everything; your own other account only skips the hand-off and identity rules,
+        # it still gets 👍 / ❤ like anyone else.
+        pushed = force and chat_id not in commander_ids
+        # A dry word is a dead end only when it answers YOUR question ("как дела?" — "норм"). After a statement,
+        # "ок" / "ладно" just closes the exchange, and that gets a 👍, not a new topic.
+        answered_dryly = ours is not None and (ours.raw_text or "").rstrip().endswith("?")
+        keep_going = (C.KEEP_TALKING and is_dry and answered_dryly and not pushed and not greeting.reply
+                      and not greeting.sticker and not photo_msg and identity is None and not quirks.is_formal(history)
+                      and time.time() - ours.date.timestamp() <= C.REVIVE_WINDOW
                       and revives.get(chat_id, 0) < C.REVIVE_MAX)
         if not is_dry:
             revives.pop(chat_id, None)
@@ -322,8 +328,8 @@ async def reply_flow(chat_id: int, contact: User):
             trace.emit("decision", who, f"Dry answer — keeping the chat going with a question or a topic "
                                         f"(try {revives[chat_id]}/{C.REVIVE_MAX})")
 
-        action = (judge.closer_action(history)
-                  if C.SMART_SKIP and not force and not greeting.reply and not greeting.sticker and not photo_msg
+        action = (judge.closer_action(history, state.handled.get(str(chat_id), 0))
+                  if C.SMART_SKIP and not pushed and not greeting.reply and not greeting.sticker and not photo_msg
                   and not keep_going else None)
         if action and quirks.is_formal(history) and re.search(r"до\s+свидания|всего\s+доброго|xayr", their_text, re.I):
             our_texts.setdefault(chat_id, []).append("До свидания")
@@ -375,7 +381,7 @@ async def reply_flow(chat_id: int, contact: User):
             if keep_going and not action and "?" not in (reply or ""):
                 # the point was to give them something to answer; a filler line doesn't, so close like a person would
                 trace.emit("decision", who, "No good question came to mind — leaving it at a reaction")
-                action = judge.closer_action(history) if C.SMART_SKIP else None
+                action = judge.closer_action(history, state.handled.get(str(chat_id), 0)) if C.SMART_SKIP else None
                 if not action:
                     return
             if action:  # the model decided this needs no text

@@ -90,9 +90,10 @@ REALLY_RE = re.compile(r"\b(точно|правда|реально|really|actual
 identity_ignored: dict[int, int] = {}   # chat_id -> newest message id of an identity question that was ignored
 
 
-def is_identity_question(sentence: str) -> bool:
+def is_identity_question(sentence: str, about_media: bool = False) -> bool:
+    """about_media: a photo or video was just sent in the chat — then "who is this?" asks about the picture."""
     if (BOT_QUESTION_RE.search(sentence) and ADDRESSED_RE.search(sentence)) or WHO_RE.search(sentence) \
-            or WHO_ALONE_RE.match(sentence):
+            or (WHO_ALONE_RE.match(sentence) and not about_media):
         return True
     # "ты точно <имя>?", "is this really <name>?" — the same question with your name in it
     return bool(app.me and "?" in sentence and REALLY_RE.search(sentence) and name_re().search(sentence))
@@ -102,13 +103,14 @@ def identity_question(history, after_id: int = 0) -> str | None:
     """-> 'only' (nothing else was said), 'mixed' (there is also something to answer) or None.
     after_id: messages up to this id were already ignored for it — they don't colour what comes later."""
     found, rest_words = False, 0
+    about_media = any(getattr(m, "photo", None) or getattr(m, "video", None) or getattr(m, "gif", None) for m in history[:6])
     for msg in itertools.takewhile(lambda m: not m.out and getattr(m, "id", 0) > after_id, history):
         if getattr(msg, "photo", None) or getattr(msg, "voice", None):
             rest_words += 3  # media counts as something to answer
         for sentence in re.split(r"(?<=[.?!,;\n])\s*", msg.raw_text or ""):
             if not sentence.strip():
                 continue
-            if is_identity_question(sentence):
+            if is_identity_question(sentence, about_media):
                 found = True
             else:  # count only words that say something beyond the accusation itself
                 rest_words += len(re.findall(r"[^\W\d_]{2,}", ACCUSE_RE.sub(" ", sentence)))
@@ -120,6 +122,7 @@ def identity_question(history, after_id: int = 0) -> str | None:
 HTML_TAG_RE = re.compile(r"</?[a-zA-Z][^>]{0,40}>|\*\*|__|`")  # leftover markup: <b>, </blockquote>, **bold**
 
 
+EMPTY_TAG_RE = re.compile(r"\[(sticker|gif|voice|video)\s*\]", re.I)  # a media tag with nothing in it
 PLACEHOLDER_RE = re.compile(r"\[(sticker|gif|voice|video)\s+[^\]]*(search words|emoji|tag|\.\.\.|…|<)[^\]]*\]", re.I)  # the instruction copied back
 
 
@@ -152,7 +155,7 @@ def clean_reply(reply: str) -> str:
         line = line.strip().lstrip("/|").strip()
         if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line) or REFUSAL_RE.search(line):
             continue
-        line = FAKE_TAG_RE.sub("", HTML_TAG_RE.sub("", PLACEHOLDER_RE.sub("", line)))
+        line = FAKE_TAG_RE.sub("", HTML_TAG_RE.sub("", PLACEHOLDER_RE.sub("", EMPTY_TAG_RE.sub("", line))))
         line = re.sub(r"^\s*\d{1,2}[.)]\s+(?=\D)", "", line)  # "1) …" list numbering
         if first:  # drop a "Name:" speaker label
             line = re.sub(rf"^\s*{re.escape(first)}\s*:\s*", "", line, flags=re.I)

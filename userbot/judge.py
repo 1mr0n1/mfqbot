@@ -59,11 +59,13 @@ def _closer_kind(text: str) -> str | None:
     return "ack"
 
 
-def closer_action(history) -> str | None:
+def closer_action(history, after_id: int = 0) -> str | None:
     """-> 'react:<emoji>' or None (= answer normally). Only when they're closing after YOUR message.
 
     Someone wrapping up ("ok", "спасибо", "пока", "спокойной ночи") gets a reaction instead of more text."""
-    unanswered = list(itertools.takewhile(lambda m: not m.out, history))
+    # after_id: messages up to this id already got their reaction — a reaction is not a message, so without this
+    # every "ок" you reacted to would still count as waiting, and the fourth one would look like a real burst
+    unanswered = list(itertools.takewhile(lambda m: not m.out and getattr(m, "id", 0) > after_id, history))
     if not unanswered or len(unanswered) > 3:
         return None  # nothing new, or a real burst
     from . import salam
@@ -91,10 +93,10 @@ DRY_WORDS = set("""норм нормально норма ничего ниче 
     yaxshi zor ha yoq yo'q hech narsa bilmadim mayli xop boladi tuzuk""".split())
 
 
-def dry(history) -> bool:
+def dry(history, after_id: int = 0) -> bool:
     """They answer with next to nothing ("ок", "да", "норм", a laugh, a sticker) but haven't said goodbye:
     the conversation is running out, not ending."""
-    unanswered = list(itertools.takewhile(lambda m: not m.out, history))
+    unanswered = list(itertools.takewhile(lambda m: not m.out and getattr(m, "id", 0) > after_id, history))
     if not unanswered or len(unanswered) > 3:
         return False
     worded = False
