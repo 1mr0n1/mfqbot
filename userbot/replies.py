@@ -33,6 +33,11 @@ AD_RE = re.compile(r"продвижени\w+|раскрутк\w+|вы\s+выиг
                    r"рекламн\w+\s+предложени\w+|pul\s+ishlash|быстрый\s+заработок|подработк\w+\s+(онлайн|от)", re.I)
 
 
+FEELINGS_RE = re.compile(r"ты\s+мне\s+(очень\s+)?нравишься|я\s+в\s+тебя\s+влюб\w+|давай\s+встречаться|"
+                         r"будешь\s+мо(им\s+парнем|ей\s+девушкой)|\bi\s+(really\s+)?like\s+(you|u)\b|\bi\s+have\s+a\s+crush\b|"
+                         r"men\s+seni\s+(sevaman|yaxshi\s+ko['ʻ‘’]?raman)|sen\s+menga\s+yoqasan", re.I)
+
+
 CHORE_RE = re.compile(r"(напиши|сочини|придумай|сгенерируй)\s+(мне\s+)?(стих\w*|сочинени\w*|эссе|рассказ\w*|песн\w*|код\w*|программ\w*|"
                       r"реферат\w*|доклад\w*|рэп)|write\s+(me\s+)?(a\s+|an\s+|some\s+)?(poem|essay|story|code|song|rap)|she'r\s+yoz", re.I)
 
@@ -330,6 +335,8 @@ async def reply_flow(chat_id: int, contact: User):
             daylog.record("skipped", who)
             trace.emit("decision", who, "Looks like an advert or bait from someone you don't know — ignoring it")
             return
+        if not reason and not force and FEELINGS_RE.search(their_text) and not people.is_family(contact):
+            reason = "they told you how they feel about you — that answer is yours"
         if not reason and not force and judge.crisis(history):
             reason = "someone in real trouble — this needs you, now"  # regardless of the hand-off switch
         if not reason and chat_id in state.manual and not force:
@@ -540,7 +547,8 @@ async def reply_flow(chat_id: int, contact: User):
         if from_model:
             # It must not agree to plans or claim what you did or didn't do: rewrite once, then use a neutral phrase.
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
-            over = None if answer_each(several, parts, fixed) else judge.overreach(their_text, said, memory.today_note())
+            heard = " ".join(m.raw_text or "" for m in history[:40] if not m.out)   # what they told you in this chat
+            over = None if answer_each(several, parts, fixed) else judge.overreach(their_text, said, memory.today_note(), heard)
             if not over and not several and judge.agrees_late(history, their_text, said, memory.today_note()):
                 over = "commitment"  # "закажи такси" … "на 8 утра" — "хорошо, закажу"
             if researched and over in ("situation", "claim"):
@@ -556,7 +564,8 @@ async def reply_flow(chat_id: int, contact: User):
                     "yes or no — put it off briefly.\n")) or "")
                 again_parts = [p for p in split_reply(again, len(several)) if allow_media or not media.MEDIA_LINE_RE.match(p)]
                 again_said = " ".join(p for p in again_parts if not media.MEDIA_LINE_RE.match(p))
-                if again_said and looks_safe(again) and not judge.overreach(their_text, again_said, memory.today_note()):
+                if again_said and looks_safe(again) and not judge.overreach(their_text, again_said, memory.today_note(), heard) \
+                        and not judge.agrees_late(history, their_text, again_said, memory.today_note()):
                     reply, parts = again, ([fixed] if fixed else []) + again_parts
                 else:
                     neutral = judge.dodge(over, lang.base(lang.detect(their_text)), their_text)
@@ -697,7 +706,8 @@ async def reply_flow(chat_id: int, contact: User):
         if from_model:
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
             late = None if answer_each(several, parts, fixed) or not said \
-                else judge.overreach(their_text, said, memory.today_note())
+                else judge.overreach(their_text, said, memory.today_note(),
+                                     " ".join(m.raw_text or "" for m in history[:40] if not m.out))
             if (researched and late in ("situation", "claim")) or (photo_msg and not pfp_failed and late == "claim"):
                 late = None
             if late:

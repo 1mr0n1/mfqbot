@@ -173,7 +173,7 @@ STRONG = [  # unmistakable cases, decided without a model
      r"|\b(code|код|kod)\b\W+(\w+\W+){0,3}(sms|смс|приш[её]л\w*|прислал\w*|отправ\w*|скин\w*|keldi|yubor\w*|ayt\w*|came|sent)"),
     # asking for money or a transfer — not merely mentioning money or a price
     ("money", rf"\b(lend|borrow|loan)\b|\bowe\s+(me|you|u)\b|\bзайм\w*\b(?!\s+(мне\s+)?(место|очередь|стол))|\bзаня(ть|л|ла)\b(?!\s+(мне\s+)?(место|очередь|стол))"
-              rf"|\bодолж\w*|\bв\s+долг\b|\bqarz\w*|ты\s+мне\s+(\d\S*\s+)?долж(ен|на)\b(?!\s+\w+(ть|ться|ти|чь)\b)|мне\s+долж(ен|на)\s+\d|\bpul\w*\s+(bormi|kerak)|\bденьги\s+есть\s*\?|\bесть\s+деньги\b|сколько\s+(ты\s+)?(мне\s+)?долж\w+|ты\s+(же\s+)?занимал|верни\s+(мне\s+)?(деньги|долг|\d+)|когда\s+(отдашь|верн[её]шь)\s+(деньги|долг)|номер\w*\s+карт\w*|card\s+number|karta\s+raqam\w*|реквизит\w*"
+              rf"|\bодолж\w*|\bв\s+долг\b|\bqarz\w*|ты\s+мне\s+(\d\S*\s+)?долж(ен|на)\b(?!\s+\w+(ть|ться|ти|чь)\b)|мне\s+долж(ен|на)\s+\d|сколько\s+(ты\s+)?(мне\s+)?долж\w+|ты\s+(же\s+)?занимал|верни\s+(мне\s+)?(деньги|долг|\d+)|когда\s+(отдашь|верн[её]шь)\s+(деньги|долг)|номер\w*\s+карт\w*|card\s+number|karta\s+raqam\w*|реквизит\w*"
               rf"|\b{ASK}\b[^.?!\n]{{0,40}}{AMOUNT}|{AMOUNT}[^.?!\n]{{0,25}}\b{ASK}\b"),
     # something happening right now, not a word that just sounds urgent
     ("an emergency", r"\b(emergency|ambulance)\b|\b(in|at)\s+(the\s+)?hospital\b|\b(car\s+)?accident\b|\bcall\s+the\s+police\b"
@@ -398,7 +398,7 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
 
 # ---------- things the account must not decide or claim on its own ----------
 PLAN_RE = re.compile(
-    r"\bго\b|\bдай(те)?\b|убери\w*|покажи\w*|помой\w*|вынеси\w*|сделай\w*|напиши\s+(мне|потом|когда)|перезвони\w*|\bsend\b|\bcall\s+me\b|зайди\w*|залетай\w*|подключайся|\bскинь\b|скинешь|\b(ты\s+)?с\s+нами\b|пойд[её]шь|ид[её]шь|прид[её]шь|зайд[её]шь|приедешь|когда\s+(буд|прид|приед|вый|зайд)\w+|через\s+сколько|"
+    r"\bго\b|\bв\s+деле\b|участвуешь|скидыва\w+|скинешься|\bare\s+(you|u)\s+in\b|\bдай(те)?\b|убери\w*|покажи\w*|помой\w*|вынеси\w*|сделай\w*|напиши\s+(мне|потом|когда)|перезвони\w*|\bsend\b|\bcall\s+me\b|зайди\w*|залетай\w*|подключайся|\bскинь\b|скинешь|\b(ты\s+)?с\s+нами\b|пойд[её]шь|ид[её]шь|прид[её]шь|зайд[её]шь|приедешь|когда\s+(буд|прид|приед|вый|зайд)\w+|через\s+сколько|"
     r"set\s+(me|up)|can\s+(you|u)\s+(set|send|give|buy|get)|встрет\w*|давай\s+(в|на|завтра|сегодня|после)|поможешь|принес\w*|"
     r"отдашь|ждём|ждем|выходи|подойд[её]шь|переночу\w*|купи\w*|позвони\w*|забери\w*|сходи\w*|съезди\w*|приезжай\w*|"
     r"приходи\w*|заходи\w*|отнеси\w*|верни\w*|оплати\w*|закажи\w*|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
@@ -409,7 +409,8 @@ PLAN_RE = re.compile(
 FLAT_PROMISE_RE = re.compile(
     r"\b(скоро\s+буду|буду\s+через|ща[сз]?\s+(приду|буду|выйду|зайду|открою|принесу)|уже\s+(иду|еду|выхожу|бегу|открываю)|"
     r"(иду|еду|выхожу|бегу)\s+уже|выезжаю|on\s+my\s+way|omw|kelyapman|boryapman|chiqyapman)\b"
-    r"|^\W*(иду|еду|бегу|выхожу|открываю|открыл|coming|ochyapman)\W*$", re.I)
+    r"|^\W*(иду|еду|бегу|выхожу|открываю|открыл|coming|ochyapman)\W*$"
+    r"|^\W*(xo['ʻ‘’]?p|mayli|хоп|хўп|майли)\W+(\w+\s+){0,2}\w{2,}(aman|аман)\b", re.I)
 SOON_RE = re.compile(r"\W*(завтра|сегодня|вечером|утром|скоро|ertaga|bugun|kechqurun|tomorrow|today|tonight|soon)\W*", re.I)
 COMMIT_RE = re.compile(
     r"\b(уберу|покажу|помою|вынесу|перезвоню|наберу|напишу|напомню|sending|on\s+it|will\s+do)\b|\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|переночую|куплю|"
@@ -423,6 +424,7 @@ DID_RE = re.compile(
     r"\bdid\s+(u|you)\b|\bhave\s+(u|you)\b|\b\w{2,}(dingmi|dingizmi|ganmisan|ganmisiz|ibmi|dimi)\b", re.I)
 # yes/no questions about you right now that only you can answer: "ты выпил таблетки?", "папа дома?", "температура есть?"
 STATE_Q_RE = re.compile(
+    r"\bу\s+тебя\s+есть\b|\bесть\s+у\s+тебя\b|\bdo\s+(you|u)\s+have\b|\bsenda\s+\w+\s+bormi\b|"
     r"\bты\b[^?]*\b\w{2,}(ил|ал|ел|ял|ул|ыл|ёл)(а|и)?(ся|сь)?\b[^?]*\?|\b\w{2,}(ил|ал|ел|ял|ул|ыл)(а|и)?(ся|сь)?\s*\?"
     r"|\b(температура|деньги|время|еда|зарядка|ключи)\s+есть\s*\?|\bесть\s+(температура|деньги|время)\s*\?"
     r"|\b(дома|там|рядом|свободен|свободна|занят|занята|идешь|идёшь|едешь|готов|готова)\s*\?"
@@ -461,7 +463,7 @@ SITUATION_RE = re.compile(
     r"|^\W*с\s+кем\W*$|\bты\s+с\s+кем\b|^\W*когда\s+домой\W*$|\bкогда\s+(ты\s+)?домой\s*\?|\bкогда\s+дома\s+будешь\b"
     # marks and tests: only you know
     r"|\bкак(ая|ую|ие)\s+(у\s+тебя\s+)?(оценк|отметк)\w*|\bчто\s+(получил|поставили)\b|\bсколько\s+(получил|баллов)\b|\bnecha\s+(olding|baho)\w*"
-    r"|\b(контрольная|контроша|кр|экзамен|сор|соч|зач[её]т)\s+когда\b|\bкогда\s+(контрольная|контроша|кр|экзамен|сор|соч|зач[её]т)\b"
+    r"|\b(контрольн\w+|контрош\w+|кр|экзамен\w*|сор|соч|зач[её]т\w*|тест\w*)\s+когда\b|\bкогда\s+(контрольн\w+|контрош\w+|кр|экзамен\w*|сор|соч|зач[её]т\w*|тест\w*)\b"
     r"|\bпо\s+какой\s+теме\b|\bкакой\s+кабинет\b|\bкто\s+дежурит\b"
     r"|\bкто\s+(у\s+(вас|тебя)\s+)?(классрук\w*|классн\w+\s+руководител\w+|директор\w*|ведёт|ведет)|\bкак\s+(его|е[её])\s+зовут\b"
     r"|\bкак\s+зовут\s+(тво\w+|ваш\w+)\s+(учител\w+|классн\w+|директор\w*|тренер\w*)"
@@ -499,6 +501,9 @@ PAY_RE = re.compile(r"\b(скину|кину|переведу|отправлю|�
 MONEY_WORD_RE = re.compile(r"деньг|денег|бабк|бабл|\bpul\w*|\bmoney\b|\bcash\b", re.I)
 
 
+BOUNCE_RE = re.compile(r"^\W*(а\s+)?(у\s+тебя|ты|тебе|тво[йяёе]|and\s+(you|u)|urs|yours|sen-?chi|o['ʻ‘’]?zing(-?chi)?)\W*$", re.I)
+
+
 def _in_facts(draft: str, them: str) -> bool:
     """Every real word of the draft is in your facts file, and so is what they asked about."""
     try:
@@ -510,11 +515,14 @@ def _in_facts(draft: str, them: str) -> bool:
     return bool(words) and all(w in facts for w in words) and any(w in facts for w in asked)
 
 
-def made_up(them: str, draft: str, known_today: str = "") -> bool:
+def made_up(them: str, draft: str, known_today: str = "", heard: str = "") -> bool:
     """They asked about your situation right now and the draft answers with specifics nobody gave the account."""
     text = draft.strip()
     if known_today or not text or text.endswith("?") or UNSURE_RE.search(text):
         return False
+    words = re.findall(r"[^\W\d_]{3,}", text.lower())
+    if heard and words and all(w in heard.lower() for w in words):
+        return False  # they said it themselves earlier in this chat ("её Рекс зовут")
     if SITUATION_RE.search(them):
         return not _in_facts(text, them)  # your form teacher's name, your timetable: written down, so not made up
     return ("?" in them or bool(QWORD_RE.search(them))) and bool(REPORT_RE.search(text))
@@ -533,7 +541,7 @@ DONE_RE = re.compile(r"^\W*(?:(?:ок(?:ей)?|хорошо|да|ладно|по
                      r"вступил|done|sent|saved|deleted|added|joined|yubordim|qildim)\b", re.I)
 
 
-def overreach(them: str, draft: str, known_today: str = "") -> str | None:
+def overreach(them: str, draft: str, known_today: str = "", heard: str = "") -> str | None:
     """-> 'commitment' (agreeing to come/meet/bring/help), 'claim' (yes/no about what you did) or 'situation'
     (details about where you are / what you ordered / when you arrive that nobody gave the account) — or None."""
     text = draft.lower()
@@ -545,6 +553,11 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
         return "claim"
     if re.fullmatch(r"\W*(держи|лови|вот|here|take\s+it)\W*", text) and not known_today:
         return "claim"  # handing over something that isn't there
+    if not known_today and (DID_RE.search(them) or STATE_Q_RE.search(them)) and not CRUDE_RE.search(them) and re.match(
+            r"^\W*(ещё\s+нет|еще\s+нет|пока\s+нет|да|нет|уже|ага|угу|yes|yeah|no|nope|not\s+yet|ha|yo['ʻ‘’]?q)\b"
+            r"(?!\W*(не\s+знаю|не\s+помню|наверн\w*|вроде|может|idk))", text) \
+            and not re.search(r"\b(понял|поняла|слышал|слышала|знал|знала|видел|видела|заметил|помнишь)\W*$", them.strip(), re.I):
+        return "claim"  # "ещё нет, позвоню позже"
     if UNSURE_RE.search(text):
         return None  # already non-committal
     if PAY_RE.search(text) and (AMOUNT_RE.search(text) or MONEY_WORD_RE.search(text) or re.search(r"\d", text)):
@@ -571,7 +584,9 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
         digits = lambda s: set(re.findall(r"\d+", s))
         if AMOUNT_RE.search(text) and "?" not in them and not (digits(text) & digits(them)):
             return "situation"  # a sum of money nobody asked about or mentioned
-    if C.GROUNDED and made_up(them, draft, known_today):
+    if not known_today and C.GROUNDED and BOUNCE_RE.match(them.strip()) and re.search(r"\d", text):
+        return "situation"  # "у меня 4, а у тебя?" — "тоже 4"
+    if C.GROUNDED and made_up(them, draft, known_today, heard):
         return "situation"
     return None
 
@@ -586,18 +601,25 @@ ASIDE = {  # nobody says "I don't know" to "where are you" or "what are you doin
 
 
 def agrees_late(history, them: str, draft: str, known_today: str = "") -> bool:
-    """They asked for something a message or two ago and are now only adding a detail ("на 8 утра", "ну пж"): a
-    draft that agrees now is the same promise."""
-    if known_today or "?" in them or len(them.split()) > 5 or UNSURE_RE.search(draft):
+    """They asked for something, you put it off or asked back, and now they only add a detail ("на 8 утра", "ну пж",
+    "она ждёт"): a draft that agrees now is the same promise."""
+    if known_today or "?" in them or len(them.split()) > 3 or UNSURE_RE.search(draft) \
+            or re.match(r"\W*(я|мы|ладно|ок|ok|кстати)\b", them, re.I):
         return False
-    before = [m.raw_text or "" for m in history if not m.out][:6]
-    asked = any(PLAN_RE.search(t) for t in before if t and t not in them)
-    return asked and bool(COMMIT_RE.search(draft.lower()) or AFFIRM_RE.match(draft.lower()))
+    rest = list(itertools.dropwhile(lambda m: not m.out, history))       # from your last message back
+    mine = rest[0].raw_text or "" if rest else ""
+    request = next((m.raw_text or "" for m in rest[1:2] if not m.out), "")
+    open_ = bool(UNSURE_RE.search(mine)) or mine.rstrip().endswith("?") or mine.lower().strip(" .!") in {
+        p for kinds in DODGE.values() for lines in kinds.values() for p in lines}
+    return bool(request and PLAN_RE.search(request) and open_
+                and (COMMIT_RE.search(draft.lower()) or AFFIRM_RE.match(draft.lower())))
 
 
 def dodge(kind: str, language: str | None, them: str = "") -> str:
     last = them.strip().splitlines()[-1] if them.strip() else ""
     aside = "where" if WHERE_Q_RE.search(last) else "doing" if DOING_Q_RE.search(last) else None
-    if aside and kind == "situation":
+    if not aside and kind == "situation" and 0 < len(last.split()) <= 2:
+        aside = "where"  # "а щас", "С кем": "ща гляну" would answer nothing
+    if aside == "where" and kind in ("situation", "claim") or aside and kind == "situation":
         return random.choice(ASIDE[aside].get(language or "ru") or ASIDE[aside]["ru"])
     return random.choice(DODGE[kind].get(language or "ru") or DODGE[kind]["ru"])

@@ -109,7 +109,31 @@ class Judge(Cases):
             ("камрон дай списать", "Давай, что там?", "commitment"), ("камрон это ты рассказал Олегу Петровичу?", "А? нет", "claim"),
             ("го в кс", "не, я дома посижу", None), ("ты дома?", "а что?", None)])
 
+    def test_what_they_said_in_this_chat_is_not_made_up(self):
+        self.assertIsNone(judge.overreach("как её зовут кстати помнишь?", "Рекс", "", "её Рекс зовут она заболела"))
+        self.assertEqual(judge.overreach("как её зовут", "Чешников", "", ""), "situation")
+        self.check(lambda them, draft: judge.overreach(them, draft, ""), [
+            ("а у тебя", "Тоже 4", "situation"), ("а у тебя", "норм", None), ("у тебя есть зарядка type-c", "Да", "claim"),
+            ("ты в деле?", "Да", "commitment"), ("Eshikni yopib qo'y", "Xop, yopaman", "commitment"),
+            ("Сынок ты маме позвонил?", "Ещё нет, позвоню позже", "claim"), ("а по истории тест когда", "В субботу вроде", "situation"),
+            ("ты уроки сделал?", "нет, не знаю когда сделаю", None), ("Xop mayli", "Xop", None)])
+
+    def test_agreeing_a_message_later_is_still_a_promise(self):
+        m = lambda t, out=False: NS(raw_text=t, out=out)
+        late = lambda them, draft, *before: judge.agrees_late([m(them)] + list(before), them, draft)
+        self.assertTrue(late("на 8 утра", "Хорошо, закажу", m("На ночь глядя?", True), m("закажи мне такси")))
+        self.assertTrue(late("Она ждёт", "понял, позвоню", m("не знаю, напишу", True), m("Позвони")))
+        self.assertFalse(late("Я в 8 буду", "Ок", m("потом скажу", True), m("Уроки сделай")))
+        self.assertFalse(late("кстати", "Ага", m("Понятно", True), m("я свою потерял"), m("не знаю", True), m("завтра принеси пж")))
+        self.assertFalse(late("на 8 утра", "не знаю, посмотрю", m("На ночь глядя?", True), m("закажи мне такси")))
+
+    def test_feelings_are_yours_to_answer(self):
+        self.check(lambda t: bool(replies.FEELINGS_RE.search(t)), [("ты мне нравишься", True), ("i like you", True),
+                   ("я люблю пиццу", False), ("мне нравится кс", False), ("Сынок я тебя люблю", False)])
+
     def test_a_dodge_fits_the_question(self):
+        self.assertIn(judge.dodge("claim", "ru", "Ты дома?"), judge.ASIDE["where"]["ru"])
+        self.assertIn(judge.dodge("situation", "ru", "а щас"), judge.ASIDE["where"]["ru"])
         self.assertIn(judge.dodge("situation", "ru", "Ты где"), judge.ASIDE["where"]["ru"])
         self.assertIn(judge.dodge("situation", "uz", "Qayerdasan"), judge.ASIDE["where"]["uz"])
         self.assertIn(judge.dodge("situation", "ru", "что делаешь"), judge.ASIDE["doing"]["ru"])
@@ -122,7 +146,7 @@ class Judge(Cases):
         money = next(p for r, p in judge.STRONG if r == "money")
         for text, want in [("сколько ты мне должен", True), ("верни 50к", True), ("верни наушники", False), ("займи место", False),
                            ("камрон ты мне 20к должен", True), ("ты мне должен объяснить", False), ("мне кажется он должен", False),
-                           ("kamron pul bormi", True), ("я должен идти", False)]:
+                           ("kamron pul bormi", False), ("Деньги есть?", False), ("я должен идти", False)]:
             self.assertEqual(bool(re.search(money, text, re.I)), want, text)
 
     def test_who_is_answering_is_not_confused_with_who_did_it(self):
