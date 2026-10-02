@@ -83,7 +83,7 @@ def is_formal(history) -> bool:
 
 def typo(text: str) -> tuple[str, str] | None:
     """-> (text with one typo, the correctly spelled word) or None if this message isn't a candidate."""
-    if len(text) < 12 or "http" in text or random.random() >= C.TYPO_CHANCE:
+    if not C.TYPOS_ON or len(text) < 12 or "http" in text or random.random() >= C.TYPO_CHANCE:
         return None
     words = [m for m in WORD_RE.finditer(text)]
     if not words:

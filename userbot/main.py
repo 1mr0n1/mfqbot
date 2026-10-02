@@ -39,7 +39,7 @@ from telethon import TelegramClient, errors, events, functions
 from telethon.tl.types import ReactionEmoji, User
 
 from . import config as C
-from . import daylog, judge, lang, media, memory, pfp, punct, quirks, recall, rhythm, salam, voice
+from . import daylog, judge, lang, media, memory, pfp, punct, quirks, recall, rhythm, salam, toggles, voice
 from . import trace
 from .autoprofile import bio_loop
 from .state import State
@@ -523,7 +523,7 @@ async def hold_draft(draft_id: str, hold: float) -> tuple[str, list[str] | None]
 
 
 def pacing_on() -> bool:
-    return bool(C.TYPING_LIMITS[1])  # USERBOT_HUMAN_PACING
+    return C.PACING and bool(C.TYPING_LIMITS[1])  # the dashboard switch, and USERBOT_HUMAN_PACING
 
 
 async def type_like_a_person(chat_id: int, text: str) -> float:
@@ -1311,6 +1311,15 @@ async def run_command(cmd: dict):
         state.set_paused(False)
         trace.emit("system", "", "Resumed from the dashboard")
         spawn(reply_to_unread())
+    elif kind == "toggle":
+        key, on = cmd.get("value"), cmd.get("text") == "on"
+        if key in toggles.TOGGLES:
+            state.settings[key] = on
+            state.save()
+            toggles.apply(state.settings)
+            trace.emit("system", "", f"{toggles.TOGGLES[key][1]}: {'ON' if on else 'off'} (set from the dashboard)")
+            if on is False and key in ("sleep", "school"):
+                spawn(reply_to_unread())  # woke up / left school early: look at what's waiting
     elif kind == "approve":
         state.set_approve(cmd.get("value") == "on")
         trace.emit("system", "", "Approve-before-sending is ON: every draft waits for you" if state.approve
@@ -1382,6 +1391,7 @@ async def command_loop():
             await trace.report_status({
                 "account": full_name(me), "paused": state.is_paused(), "approve": state.approve,
                 "asleep": rhythm.asleep(), "busy": rhythm.busy(), "models": C.MODELS, "mode": C.REPLY_MODE,
+                "toggles": toggles.snapshot(),
                 "chats": sorted(({"name": names.get(cid, str(cid)), "mode": state.mode_of(cid),
                                   "waiting": cid in pending, "held": state.handed_off(cid)}
                                  for cid in known if cid in names), key=lambda c: c["name"].lower())})
@@ -1452,6 +1462,7 @@ async def main():
         raise SystemExit("Not logged in. Run once: .venv/bin/python -m userbot.login")
     me = await client.get_me()
     rhythm.awake_until = state.awake_until
+    toggles.apply(state.settings)
     log.info("Running as %s (@%s) | mode=%s | models=%s | paused=%s",
              full_name(me), me.username, C.REPLY_MODE, C.MODELS, state.is_paused())
     if C.REPLY_MODE == "all":

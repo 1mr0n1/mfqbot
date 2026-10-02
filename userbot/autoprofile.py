@@ -99,15 +99,13 @@ def next_change_at(state: State) -> float:
 
 
 async def bio_loop(client: TelegramClient, state: State):
-    if not C.AUTO_BIO:
-        return
     http = httpx.AsyncClient(base_url=C.BACKEND_URL, timeout=120)
     due = next_change_at(state)
     log.info("Auto-bio on; next change around %s", datetime.fromtimestamp(due).strftime("%H:%M %d.%m"))
     while True:
         await asyncio.sleep(max(due - time.time(), 0) + 1)
         hour = datetime.now().hour
-        if state.is_paused() or C.BIO_QUIET_HOURS[0] <= hour < C.BIO_QUIET_HOURS[1]:
+        if not C.AUTO_BIO or state.is_paused() or C.BIO_QUIET_HOURS[0] <= hour < C.BIO_QUIET_HOURS[1]:
             due = time.time() + random.uniform(20, 60) * 60  # look again later
             continue
         try:

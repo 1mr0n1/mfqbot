@@ -45,7 +45,7 @@ awake_until = 0.0  # "stay up" override (.ai awake 2h): no sleeping before this 
 
 
 def asleep(now: datetime | None = None) -> bool:
-    if not C.RHYTHM or (now is None and time.time() < awake_until):
+    if not C.RHYTHM or not C.SLEEP_ON or (now is None and time.time() < awake_until):
         return False
     now = now or datetime.now()
     if _in_window(C.SLEEP_WINDOW, now):
@@ -57,7 +57,7 @@ def asleep(now: datetime | None = None) -> bool:
 
 def busy(now: datetime | None = None) -> bool:
     now = now or datetime.now()
-    return C.RHYTHM and now.weekday() < 5 and _in_window(C.BUSY_WINDOW, now)
+    return C.RHYTHM and C.SCHOOL_ON and now.weekday() < 5 and _in_window(C.BUSY_WINDOW, now)
 
 
 def status(now: datetime | None = None) -> str:
@@ -85,7 +85,7 @@ def wait_seconds(chat_id: int) -> float:
         return _available_at[chat_id] - now
     if busy():
         delay = random.uniform(*C.BUSY_DELAY)
-    elif random.random() < C.SLOW_CHANCE:
+    elif C.SLOW_ON and random.random() < C.SLOW_CHANCE:
         delay = random.uniform(*C.SLOW_DELAY)
     else:
         delay = 0

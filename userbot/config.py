@@ -25,6 +25,12 @@ REVIEW = os.environ.get("USERBOT_REVIEW", "true").lower() in ("1", "true", "yes"
 
 # Daily rhythm and presence (see rhythm.py) — local time of this machine
 RHYTHM = os.environ.get("USERBOT_RHYTHM", "true").lower() in ("1", "true", "yes")
+# Individual switches (flipped from the dashboard, see toggles.py)
+SLEEP_ON = True     # night sleep
+SCHOOL_ON = True    # slower replies during BUSY_WINDOW on weekdays
+SLOW_ON = True      # the occasional slow reply
+PACING = True       # reading/thinking pause + typing indicator
+TYPOS_ON = True     # rare typo that gets fixed
 SLEEP_WINDOW = os.environ.get("USERBOT_SLEEP", "00:00-07:00")   # asleep: nothing is read or answered
 BUSY_WINDOW = os.environ.get("USERBOT_BUSY", "08:30-15:30")     # weekdays (school): answers come late
 WAKE_JITTER_MIN = (5, 30)        # minutes after waking before the phone is picked up

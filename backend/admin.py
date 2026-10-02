@@ -42,7 +42,7 @@ class DraftEdit(BaseModel):
 
 
 class Command(BaseModel):
-    type: str            # pause | resume | approve | mode | answer | say | history
+    type: str            # pause | resume | approve | toggle | mode | answer | say | history
     chat: str = ""       # person's name as shown on the dashboard
     text: str = ""       # for "say"
     value: str = ""      # for "mode": auto | manual | off; for "approve": on | off

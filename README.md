@@ -175,6 +175,9 @@ Open http://127.0.0.1:8000/admin while the backend and userbot run.
 - **Chats** — per chat: mode (**Auto** / **Manual** = never answer, only tell you / **Off**), **Answer now**
   (make the bot reply where it stayed silent: left to you, ignored, no reply needed), and a box to send your
   own text with normal typing.
+- **Settings** — switches for night sleep, school mode, slow replies, human typing, typos, stickers & GIFs,
+  reactions, hand-off, second look, photo vision, voice transcription, notes, group mentions, profile photo on
+  request and auto-bio. They apply immediately and are remembered across restarts (`userbot/toggles.py`).
 - **Pause / Resume** for everything.
 
 The layout adapts to phones and tablets. Events live in memory only.
