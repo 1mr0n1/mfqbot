@@ -124,6 +124,8 @@ RECENT_UNANSWERED = 10 * 3600  # read-but-unanswered messages this recent still 
                                # yourself must not cancel the reply (covers a whole night of sleep)
 UNREAD_RESCAN_SECONDS = 45     # re-check the 30 most recent chats for unread DMs this often
 
+REPEAT_LOOKBACK = 12           # a draft may not repeat a line from this many latest messages of the chat
+
 # Someone floods the chat -> the same flood goes back at them
 SPAM_BACK = True
 SPAM_TRIGGER = 5               # this many messages from one person...

@@ -568,6 +568,15 @@ async def no_text_reply(chat_id: int, who: str, action: str, history):
     trace.emit("sent", who, f"[reaction {emoji}] instead of a text reply")
 
 
+def stale_parts(history, parts: list[str]) -> list[str]:
+    """Lines of a draft that were already said in this chat: by you (the model copies its own earlier
+    messages from the history and gets stuck on them) or just now by them (parroting)."""
+    recent = [m.raw_text for m in history if m.raw_text][:C.REPEAT_LOOKBACK]
+    said = {judge._norm(t) for t in recent} | {judge._norm(line) for t in recent for line in t.splitlines()}
+    return [p for p in parts if not media.MEDIA_LINE_RE.match(p)
+            and len(judge._norm(p).split()) >= 2 and judge._norm(p) in said]
+
+
 async def reply_flow(chat_id: int, contact: User):
     global me
     who = names[chat_id] = full_name(contact)
@@ -792,6 +801,26 @@ async def reply_flow(chat_id: int, contact: User):
             parts = [p for p in parts if p]
         if not parts:
             return
+
+        # Never the same line again: a draft that repeats what was already said gets rewritten, then trimmed.
+        stale = stale_parts(history, [p for p in parts if p != fixed]) if from_model else []
+        if stale:
+            log.info("%s: draft repeats earlier messages: %r", who, stale)
+            trace.emit("warning", who, "Draft repeats what was already said (" + " / ".join(stale)[:120] + ") — rewriting")
+            again = clean_reply(await generate(history, contact, hint + (
+                "\nYou have ALREADY sent these exact lines in this chat: " + " | ".join(f"“{p}”" for p in stale) +
+                ". Do not write them again, and do not copy any of your earlier messages or theirs. React to what "
+                "they just wrote with different words.\n")) or "")
+            habits = punct_profile(contact)
+            fresh = [p if media.MEDIA_LINE_RE.match(p) else punct.apply(p, habits)
+                     for p in split_reply(again) if allow_media or not media.MEDIA_LINE_RE.match(p)] if looks_safe(again) else []
+            fresh = [p for p in fresh if p and p not in stale_parts(history, fresh)]
+            parts = ([fixed] if fixed else []) + (fresh or [p for p in parts if p != fixed and p not in stale])
+            reply = "\n".join(parts)
+            if not parts:
+                trace.emit("decision", who, "Nothing new to say — not sending the same line again")
+                daylog.record("skipped", who)
+                return
 
         # A second look before anything is sent: wrong language, nonsense words, a missed question…
         if C.REVIEW and from_model:
