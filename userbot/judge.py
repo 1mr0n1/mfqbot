@@ -332,7 +332,9 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
     their_cyrillic = bool(re.search("[а-яё]", them, re.I))
     # Only clear mismatches count. A Russian answer to Latin-script text (transliterated Russian, Uzbek, mixed)
     # is how you often write, so it passes; Uzbek or English out of nowhere does not.
-    if expected is None and len(them.split()) >= 2 and len(text.split()) >= 2:
+    # "x = 5", "2x = 10", "391": numbers and symbols are no language at all
+    worded = len(re.findall(r"[^\W\d_]{3,}", text)) >= 2
+    if expected is None and worded and len(them.split()) >= 2 and len(text.split()) >= 2:
         if draft_lang == "uz" and their_lang != "uz":
             # only when they clearly wrote Russian or English: a short or slangy Uzbek message ("qalesan", "ишлар калай")
             # is often not recognised as Uzbek, and answering it in Uzbek is exactly right
@@ -349,7 +351,7 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
     if odd:
         return f"strange word '{odd}'"
     # they wrote in Cyrillic, the draft has no Cyrillic at all and isn't just a word or two (a name, "ok", a translation)
-    if expected is None and re.search("[а-яё]", them, re.I) and not re.search("[а-яё]", text, re.I) \
+    if expected is None and worded and re.search("[а-яё]", them, re.I) and not re.search("[а-яё]", text, re.I) \
             and len(re.findall(r"[A-Za-z]{2,}", text)) >= 3 \
             and not all(w[0].isupper() or len(w) < 3 for w in re.findall(r"[A-Za-z]{2,}", text)):
         return "wrong language (Latin letters instead of Russian)"
