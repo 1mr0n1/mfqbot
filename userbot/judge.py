@@ -152,7 +152,7 @@ AMOUNT = r"(деньг\w*|денег|на\s+карт\w*|kartaga|\bpul\b|\$\s?\d{
 CRISIS_RE = re.compile(
     r"не\s+хочу\s+(больше\s+)?жить|хочу\s+умереть|покончить\s+с\s+собой|суицид\w*|убью\s+себя|никому\s+не\s+нуж\w+|"
     r"вс[её]\s+бессмысленн\w*|не\s+вижу\s+смысла|не\s+хочу\s+больше\s+ничего|"
-    r"меня\s+(бьют|бь[её]т|избива\w+|насилу\w+|шантажиру\w+|преследу\w+)|шантаж\w*|угрожа\w+\s+(мне|выложить|слить)|"
+    r"меня\s+(бьют|бь[её]т|избива\w+|избил\w*|побил\w*|насилу\w+|шантажиру\w+|преследу\w+)|шантаж\w*|угрожа\w+\s+(мне|выложить|слить)|"
     r"хочу\s+сбежать\s+из\s+дома|сбегу\s+из\s+дома|"
     r"kill\s+myself|want\s+to\s+die|don'?t\s+want\s+to\s+live|no\s+reason\s+to\s+live|suicid\w*|self[-\s]?harm|"
     r"(he|she|they|dad|mom)\s+(hits?|beats?)\s+me|being\s+blackmailed|blackmail\w*|"
@@ -170,10 +170,10 @@ STRONG = [  # unmistakable cases, decided without a model
     ("a verification code or password",
      r"\b(otp|password|passcode)\b|парол\w*|\bparol\w*"
      r"|(sms|смс|verification|login|confirm\w*|подтвержд\w*|tasdiq\w*)\W+(\w+\W+){0,3}(code|код|kod)\b"
-     r"|\b(code|код|kod)\b\W+(\w+\W+){0,3}(sms|смс|пришл\w*|прислал\w*|отправ\w*|скин\w*|keldi|yubor\w*|ayt\w*|came|sent)"),
+     r"|\b(code|код|kod)\b\W+(\w+\W+){0,3}(sms|смс|приш[её]л\w*|прислал\w*|отправ\w*|скин\w*|keldi|yubor\w*|ayt\w*|came|sent)"),
     # asking for money or a transfer — not merely mentioning money or a price
     ("money", rf"\b(lend|borrow|loan)\b|\bowe\s+(me|you|u)\b|\bзайм\w*\b(?!\s+(мне\s+)?(место|очередь|стол))|\bзаня(ть|л|ла)\b(?!\s+(мне\s+)?(место|очередь|стол))"
-              rf"|\bодолж\w*|\bв\s+долг\b|\bqarz\w*|мне\s+долж(ен|на)\b|сколько\s+(ты\s+)?(мне\s+)?долж\w+|ты\s+(же\s+)?занимал|верни\s+(мне\s+)?(деньги|долг|\d+)|когда\s+(отдашь|верн[её]шь)\s+(деньги|долг)|номер\w*\s+карт\w*|card\s+number|karta\s+raqam\w*|реквизит\w*"
+              rf"|\bодолж\w*|\bв\s+долг\b|\bqarz\w*|ты\s+мне\s+(\d\S*\s+)?долж(ен|на)\b(?!\s+\w+(ть|ться|ти|чь)\b)|мне\s+долж(ен|на)\s+\d|\bpul\w*\s+(bormi|kerak)|\bденьги\s+есть\s*\?|\bесть\s+деньги\b|сколько\s+(ты\s+)?(мне\s+)?долж\w+|ты\s+(же\s+)?занимал|верни\s+(мне\s+)?(деньги|долг|\d+)|когда\s+(отдашь|верн[её]шь)\s+(деньги|долг)|номер\w*\s+карт\w*|card\s+number|karta\s+raqam\w*|реквизит\w*"
               rf"|\b{ASK}\b[^.?!\n]{{0,40}}{AMOUNT}|{AMOUNT}[^.?!\n]{{0,25}}\b{ASK}\b"),
     # something happening right now, not a word that just sounds urgent
     ("an emergency", r"\b(emergency|ambulance)\b|\b(in|at)\s+(the\s+)?hospital\b|\b(car\s+)?accident\b|\bcall\s+the\s+police\b"
@@ -354,6 +354,7 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
         return None  # only media
     last_theirs = them.strip().splitlines()[-1] if them.strip() else ""
     if _norm(text) and _norm(text) == _norm(last_theirs) and not GREETING_RE.match(last_theirs.strip()) \
+            and not NIGHT_RE.search(last_theirs) \
             and len(_norm(text).split()) >= 2:
         return "it repeats their message"
     if re.search(r"перевед\w*|перевод\w*|translat\w*|tarjima\w*|на\s+(узбекск|английск|русск)\w*|по[-\s](узбекски|английски|русски)|"
@@ -397,7 +398,7 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
 
 # ---------- things the account must not decide or claim on its own ----------
 PLAN_RE = re.compile(
-    r"\bго\b|убери\w*|покажи\w*|помой\w*|вынеси\w*|сделай\w*|напиши\s+(мне|потом|когда)|перезвони\w*|\bsend\b|\bcall\s+me\b|зайди\w*|залетай\w*|подключайся|\bскинь\b|скинешь|\b(ты\s+)?с\s+нами\b|пойд[её]шь|ид[её]шь|прид[её]шь|зайд[её]шь|приедешь|когда\s+(буд|прид|приед|вый|зайд)\w+|через\s+сколько|"
+    r"\bго\b|\bдай(те)?\b|убери\w*|покажи\w*|помой\w*|вынеси\w*|сделай\w*|напиши\s+(мне|потом|когда)|перезвони\w*|\bsend\b|\bcall\s+me\b|зайди\w*|залетай\w*|подключайся|\bскинь\b|скинешь|\b(ты\s+)?с\s+нами\b|пойд[её]шь|ид[её]шь|прид[её]шь|зайд[её]шь|приедешь|когда\s+(буд|прид|приед|вый|зайд)\w+|через\s+сколько|"
     r"set\s+(me|up)|can\s+(you|u)\s+(set|send|give|buy|get)|встрет\w*|давай\s+(в|на|завтра|сегодня|после)|поможешь|принес\w*|"
     r"отдашь|ждём|ждем|выходи|подойд[её]шь|переночу\w*|купи\w*|позвони\w*|забери\w*|сходи\w*|съезди\w*|приезжай\w*|"
     r"приходи\w*|заходи\w*|отнеси\w*|верни\w*|оплати\w*|закажи\w*|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
@@ -427,7 +428,7 @@ STATE_Q_RE = re.compile(
     r"|\b(дома|там|рядом|свободен|свободна|занят|занята|идешь|идёшь|едешь|готов|готова)\s*\?"
     r"|\b\w{3,}(mi|misan|misiz|ми|мисан|мисиз)\s*\?", re.I)
 UZ_Q_RE = re.compile(r"\b\w{3,}(misan|misiz|мисан|мисиз)\b|\b[a-z'ʻ‘’]{3,}mi\b(?!\s*-)", re.I | re.M)
-CLAIM_RE = re.compile(r"^\W*(да|нет|нету|есть|не|неа|ага|угу|ещё\s+нет|еще\s+нет|пока\s+нет|уже|yes|yeah|yep|no|nope|nah|not\s+yet|"
+CLAIM_RE = re.compile(r"^\W*(?:(?:а|ну|э+|хм+|не)\W+)?(да|нет|нету|есть|не|неа|ага|угу|ещё\s+нет|еще\s+нет|пока\s+нет|уже|yes|yeah|yep|no|nope|nah|not\s+yet|"
                       r"ha|haa|yo['ʻ‘’]?q|yoq|xa|ха|йўқ|йук|ҳа|hali\s+yo['ʻ‘’]?q|"
                       r"\w{2,}(dim|madim|ganman|maganman))\b", re.I)
 AFFIRM_RE = re.compile(r"^\W*(да|ага|угу|ок|окей|оке\w*|хорошо|конечно|давай|го|погнали|sure|yeah|yes|yep|ok|okay|bet|"
@@ -457,9 +458,9 @@ SITUATION_RE = re.compile(
     r"|\bwhere\s+(are|r)\s+(you|u)\b|\bwya\b|\bwhen\s+(will|are|r)\s+(you|u)\b|\bhow\s+long\b|\bwhat\s+did\s+(you|u)\s+(eat|get|order|buy)\b"
     r"|\bwho('?s|\s+is|\s+are)?\s+(you\s+|u\s+)?(with|there)\b|\bwhat('?s|\s+is)\s+the\s+(hw|homework)\b"
     r"|\bqayer\w*|\bqatta\w*|\bqachon\s+(kel|chiq|bor|qayt)\w*|\bkim\s+bilan\b|\bnima\s+(yeding|olding|berdi)\w*"
-    r"|^\W*с\s+кем\W*$|^\W*когда\s+домой\W*$|\bкогда\s+(ты\s+)?домой\s*\?|\bкогда\s+дома\s+будешь\b"
+    r"|^\W*с\s+кем\W*$|\bты\s+с\s+кем\b|^\W*когда\s+домой\W*$|\bкогда\s+(ты\s+)?домой\s*\?|\bкогда\s+дома\s+будешь\b"
     # marks and tests: only you know
-    r"|\bкак(ая|ую|ие)\s+(оценк|отметк)\w*|\bчто\s+(получил|поставили)\b|\bсколько\s+(получил|баллов)\b|\bnecha\s+(olding|baho)\w*"
+    r"|\bкак(ая|ую|ие)\s+(у\s+тебя\s+)?(оценк|отметк)\w*|\bчто\s+(получил|поставили)\b|\bсколько\s+(получил|баллов)\b|\bnecha\s+(olding|baho)\w*"
     r"|\b(контрольная|контроша|кр|экзамен|сор|соч|зач[её]т)\s+когда\b|\bкогда\s+(контрольная|контроша|кр|экзамен|сор|соч|зач[её]т)\b"
     r"|\bпо\s+какой\s+теме\b|\bкакой\s+кабинет\b|\bкто\s+дежурит\b"
     r"|\bкто\s+(у\s+(вас|тебя)\s+)?(классрук\w*|классн\w+\s+руководител\w+|директор\w*|ведёт|ведет)|\bкак\s+(его|е[её])\s+зовут\b"
@@ -485,6 +486,9 @@ NOT_KNOWN_HINT = (
 # "я дома", "ha, uydaman", "i'm at school": where you are, stated flat — nobody told the account
 WHERE_I_AM_RE = re.compile(
     r"^\W*(?:(?:да|ага|угу|ну|ha|xa|yes|yeah|yep)\W+)?(?:я\s+)?(?:уже\s+|щас\s+|сейчас\s+)?(дома|в\s+школе|на\s+уроке|на\s+улице|в\s+пути|в\s+дороге)\W*$"
+    r"|\bя\s+(уже\s+|щас\s+|сейчас\s+)?(дома|в\s+школе|на\s+уроке|на\s+улице)\b(?!\s+(посижу|останусь|буду|был|не\b))|\b(один|одна)\s+дома\b"
+    r"|^\W*(?:(?:да|ага|ну)\W+)?(?:я\s+)?(дома|doma)\b(?!\s+(посижу|останусь|буду|был|не\b|никого|нет\b))"
+    r"|\bya\s+doma\b|^\W*(уйда|uyda)\b|\bjust\s+got\s+home\b|\bi'?m\s+(at\s+)?home\b|\bтолько\s+(пришёл|пришел|зашёл|зашел)\b"
     r"|\b(дома\s+(сижу|лежу|валяюсь)|(сижу|лежу|валяюсь)\s+дома|doma\s+si[dzj]\w+)\b"
     r"|\b(uyda|maktabda|darsda|yo['ʻ‘’]?lda|ko['ʻ‘’]?chada|ishda)man\b|^\W*(?:(?:yes|yeah|yep)\W+)?i'?m\s+(at\s+)?(home|school)\W*$", re.I)
 # an amount of money: "50$", "300-350$", "275.000 сум", "20к"
@@ -556,7 +560,9 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
         # "yes"/"no", or the question's own word handed back as the answer ("ты сделал?" — "сделал", "дома?" — "дома")
         first = re.match(r"\W*([^\W\d_]+)", text)
         asked = set(re.findall(r"[^\W\d_]{3,}", them.lower())) - {"ты", "вы", "это", "что", "как", "the", "you"}
+        uzbek_q = UZ_Q_RE.search(them) or re.search(r"\w(dingmi|дингми|ganmisan|ганмисан)\b", them, re.I)
         if CLAIM_RE.match(text) or re.match(r"\W*ok\W*$", text) and UZ_Q_RE.search(them) \
+                or uzbek_q and re.search(r"\b\w{2,}(dim|madim|дим|мадим|ganman|ганман)\b", text) \
                 or (first and first.group(1) in asked and "?" in them):
             return "claim"
     if not known_today and C.GROUNDED:

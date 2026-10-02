@@ -21,7 +21,7 @@ account would have done.
 .venv/bin/python -m userbot.simulate tests/scenarios/multi.json out.json       # 80+ multi-turn chats
 .venv/bin/python -m userbot.simscore out.json                                  # score a run
 USERBOT_INTRO=true .venv/bin/python -m userbot.simulate tests/scenarios/who_is_this.json
-PYTHONPATH=. .venv/bin/python tests/group_sim.py tests/group_cases.json out.json   # being called in groups
+PYTHONPATH=. .venv/bin/python tests/group_sim.py tests/group_cases.json out.json   # being called in groups (also group_cases2.json: 81 more)
 ```
 
 `scenarios/`: `multi` (general), `hard` and `night2` (traps, family in Uzbek, scams, crises, sums), `dry` and `react` (keeping a chat going vs. a 👍), `multiq` (several questions),

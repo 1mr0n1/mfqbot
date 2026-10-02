@@ -37,6 +37,10 @@ CHORE_RE = re.compile(r"(напиши|сочини|придумай|сгенер
                       r"реферат\w*|доклад\w*|рэп)|write\s+(me\s+)?(a\s+|an\s+|some\s+)?(poem|essay|story|code|song|rap)|she'r\s+yoz", re.I)
 
 
+CHORE_HINT = ("\nThey want you to produce something a writing service would (a poem, an essay, code, a story). You are "
+              "a teenager chatting, not a service: brush it off in your own words (too lazy, “сам пиши”). Don't write it.\n")
+
+
 # what people actually tap a reaction on: laughs, good news, congratulations, compliments, emoji-heavy messages
 REACTABLE_RE = re.compile(r"аха|хаха|лол|\blol\b|lmao|ура|поздрав|молодец|красав|круто|класс|супер|выиграл|получил|сдал|"
                           r"\b(nice|congrats|won|yay|let'?s go)\b|zo'?r|tabrik|[\U0001F600-\U0001F64F\U0001F389\U0001F525\u2764]", re.I)
@@ -363,8 +367,7 @@ async def reply_flow(chat_id: int, contact: User):
                      "you are not a program and nothing gets carried out. React like a puzzled person (“?”, “чё”), don't say ok or done.\n")
         earlier = [m.raw_text or "" for m in history if not m.out][:4]
         if CHORE_RE.search(their_text) or any(CHORE_RE.search(t) for t in earlier):
-            hint += ("\nThey want you to produce something a writing service would (a poem, an essay, code, a story). You are "
-                     "a teenager chatting, not a service: brush it off in your own words (too lazy, “сам пиши”). Don't write it.\n")
+            hint += CHORE_HINT
         researched = None
         if C.LOOKUP_ON and not asking_who:
             researched = await lookup.research(http, history, their_text)

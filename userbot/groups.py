@@ -12,7 +12,7 @@ from . import trace
 from . import app
 from .app import commander_ids, describe, full_name, group_done, group_names, group_seen, hold_draft, http, log, our_ids, our_texts, pacing_on, rand, state, type_like_a_person
 from .drafting import persona, punct_profile, style_block, style_stats
-from .replies import DEFER_RE, TEACHER_RE
+from .replies import AD_RE, CHORE_HINT, CHORE_RE, DEFER_RE, TEACHER_RE
 from .wording import IDENTITY_HINT, PRESSING_RE, clean_reply, identity_question, looks_safe, name_re, split_reply, stale_parts
 
 
@@ -166,6 +166,16 @@ async def group_reply_flow(event, sender: User, force: bool = False, joining: bo
             trace.emit("decision", who, "They asked who/what is answering — ignoring it, no reply")
             daylog.record("ignored", who, text)
             return
+        if not force and judge.CRISIS_RE.search(text):  # someone in real trouble gets you, not an auto-reply — in a group too
+            trace.emit("incoming", who, text[:300])
+            trace.emit("warning", who, "Someone in real trouble, in a group — not answering, telling you now")
+            daylog.record("handoff", who, f"someone in trouble, in a group: {text[:200]}")
+            await app.client.send_message("me", f"🚨 {who} wrote this to you in a group, and it sounds serious:\n“{text[:300]}”\n"
+                                                "I'm not answering it. It needs you.")
+            return
+        if not force and AD_RE.search(text):
+            trace.emit("decision", who, "Looks like an advert — ignoring it")
+            return
         if not force and C.HANDOFF and await judge.sensitive_reason(http, full_name(app.me), [message], keywords_only=True):
             trace.emit("warning", who, "Sensitive topic in a group — not replying")
             return
@@ -203,7 +213,7 @@ async def group_reply_flow(event, sender: User, force: bool = False, joining: bo
                                                       "system": system + extra, "models": C.MODELS, "max_tokens": 300})
             return "" if resp.is_error else clean_reply(resp.json()["reply"])
 
-        reply = await write()
+        reply = await write(CHORE_HINT if CHORE_RE.search(text) else "")
         if joining:
             if not reply or re.match(r"\W*SKIP\b", reply, re.I) or "SKIP" in reply:
                 log.info("%s: not called, decided to stay out", who)

@@ -45,7 +45,7 @@ ASSISTANT_RE = re.compile(
 # Questions about who or what is answering ("are you a bot?", "who are you?", "is this really you?") are ignored:
 # no confirmation, no denial. Lines where the model claims to be human are dropped, so ignoring never becomes lying.
 BOT_QUESTION_RE = re.compile(r"\b(bot|robot|ai|a\.i\.|chat ?gpt|gpt|neural|автоответчик|бот|робот|ии|нейросеть|"
-                             r"нейронка|чатгпт)\b", re.I)
+                             r"нейронка|чатгпт|ча[тд]\s*гпт|гпт|llm|клод|claude|deepseek|gemini)\b", re.I)
 
 
 ADDRESSED_RE = re.compile(r"\?|\b(u|you|ur|you'?re|youre|r u|are|is this|ты|вы|тебя|это|sen|san|siz)\b", re.I)
@@ -116,6 +116,9 @@ PROBE_RE = re.compile(
 
 def is_identity_question(sentence: str, about_media: bool = False) -> bool:
     """about_media: a photo or video was just sent in the chat — then "who is this?" asks about the picture."""
+    if re.search(r"\b(есть|скачал\w*|пользу\w+|использу\w+|через|спроси\s+у|спросил\w*\s+у|use|using|ask)\s+(ча[тд]\s*гпт|chat\s*gpt|"
+                 r"gpt|гпт|нейронк\w+|нейросет\w+|ии|ai)\b", sentence, re.I) and not WHO_RE.search(sentence):
+        return False  # "у тебя есть чат гпт?", "спроси у гпт" — about the tool, not about who is answering
     if (BOT_QUESTION_RE.search(sentence) and ADDRESSED_RE.search(sentence)) or WHO_RE.search(sentence) \
             or (WHO_ALONE_RE.match(sentence) and not about_media) or PROBE_RE.search(sentence):
         return True

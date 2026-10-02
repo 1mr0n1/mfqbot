@@ -103,7 +103,11 @@ class Judge(Cases):
             ("ты обещал вернуть", "А, точно, верну завтра", "commitment"), ("когда вернёшь", "завтра", "commitment"),
             ("верни 50к", "Вернул", "claim"), ("родителей нет", "Ок, скоро буду", "commitment"), ("что делаешь", "Дома сижу", "situation"),
             ("ты понял?", "не понял", None), ("когда фильм выйдет", "завтра", None), ("кто выиграл ЧМ 2022", "Аргентина", None),
-            ("что делаешь", "да ничего", None), ("ты забыл", "не забыл", None)])
+            ("что делаешь", "да ничего", None), ("ты забыл", "не забыл", None),
+            ("камрон ты где", "Да я дома, а чё?", "situation"), ("Камрон ты с кем", "Один дома", "situation"),
+            ("@me_x wyd", "Just got home, you?", "situation"), ("камрон какая у тебя оценка по алгебре", "4", "situation"),
+            ("камрон дай списать", "Давай, что там?", "commitment"), ("камрон это ты рассказал Олегу Петровичу?", "А? нет", "claim"),
+            ("го в кс", "не, я дома посижу", None), ("ты дома?", "а что?", None)])
 
     def test_a_dodge_fits_the_question(self):
         self.assertIn(judge.dodge("situation", "ru", "Ты где"), judge.ASIDE["where"]["ru"])
@@ -116,12 +120,15 @@ class Judge(Cases):
             self.assertTrue(judge.CRISIS_RE.search(text), text)
         self.assertFalse(judge.CRISIS_RE.search("мне плохо от этой музыки"))
         money = next(p for r, p in judge.STRONG if r == "money")
-        for text, want in [("сколько ты мне должен", True), ("верни 50к", True), ("верни наушники", False), ("займи место", False)]:
+        for text, want in [("сколько ты мне должен", True), ("верни 50к", True), ("верни наушники", False), ("займи место", False),
+                           ("камрон ты мне 20к должен", True), ("ты мне должен объяснить", False), ("мне кажется он должен", False),
+                           ("kamron pul bormi", True), ("я должен идти", False)]:
             self.assertEqual(bool(re.search(money, text, re.I)), want, text)
 
     def test_who_is_answering_is_not_confused_with_who_did_it(self):
         for text, want in [("это ты рассказал Диме?", False), ("это ты?", True), ("это ты пишешь?", True), ("чат гпт?", True),
-                           ("это ты сделал", False), ("ты нейронка?", True)]:
+                           ("это ты сделал", False), ("ты нейронка?", True),
+                           ("камрон ты чат гпт?", True), ("у тебя есть чат гпт?", False), ("спроси у гпт", False)]:
             self.assertEqual(wording.is_identity_question(text), want, text)
 
     def test_dry(self):
