@@ -147,7 +147,8 @@ STRONG = [  # unmistakable cases, decided without a model
      r"|(sms|смс|verification|login|confirm\w*|подтвержд\w*|tasdiq\w*)\W+(\w+\W+){0,3}(code|код|kod)\b"
      r"|\b(code|код|kod)\b\W+(\w+\W+){0,3}(sms|смс|пришл\w*|прислал\w*|отправ\w*|скин\w*|keldi|yubor\w*|ayt\w*|came|sent)"),
     # asking for money or a transfer — not merely mentioning money or a price
-    ("money", rf"\b(lend|borrow|loan)\b|\bowe\s+(me|you|u)\b|\bзайм\w*|\bзаня(ть|л|ла)\b|\bодолж\w*|\bв\s+долг\b|\bqarz\w*"
+    ("money", rf"\b(lend|borrow|loan)\b|\bowe\s+(me|you|u)\b|\bзайм\w*\b(?!\s+(мне\s+)?(место|очередь|стол))|\bзаня(ть|л|ла)\b(?!\s+(мне\s+)?(место|очередь|стол))"
+              rf"|\bодолж\w*|\bв\s+долг\b|\bqarz\w*|номер\w*\s+карт\w*|card\s+number|karta\s+raqam\w*|реквизит\w*"
               rf"|\b{ASK}\b[^.?!\n]{{0,40}}{AMOUNT}|{AMOUNT}[^.?!\n]{{0,25}}\b{ASK}\b"),
     # something happening right now, not a word that just sounds urgent
     ("an emergency", r"\b(emergency|ambulance)\b|\b(in|at)\s+(the\s+)?hospital\b|\b(car\s+)?accident\b|\bcall\s+the\s+police\b"
