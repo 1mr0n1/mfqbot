@@ -52,6 +52,14 @@ def facts_block(name: str) -> str:
     facts = "\n".join(lines)
     if not facts:
         return ""
+    # "what do you have tomorrow?" — a model gets the weekday wrong, so the right timetable lines are spelled out
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    table = {d: m.group(1).strip() for d in days if (m := re.search(rf"(?im)^Timetable {d}:\s*(.+)$", facts))}
+    if table:
+        now = time.localtime()
+        for label, offset in (("TODAY", 0), ("TOMORROW", 1), ("THE DAY AFTER TOMORROW", 2), ("YESTERDAY", -1)):
+            day = days[(now.tm_wday + offset) % 7]
+            facts += f"\n{label} is {day}; lessons: {table.get(day, 'none — no school')}"
     today = today_note()
     if today:
         facts += f"\nToday ({time.strftime('%A')}): {today}"
