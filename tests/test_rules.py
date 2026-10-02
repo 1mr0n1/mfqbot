@@ -289,5 +289,42 @@ class LateAdditions(Cases):
         self.assertEqual(people.RELATIVE_RE.search("Это отец твоей матери").group(0), "отец твоей матери")
 
 
+class MoodAndPresence(Cases):
+    def test_mood_is_one_per_day_and_can_be_set(self):
+        from userbot import mood
+        C.MOOD_ON = True
+        mood._forced = None
+        self.assertEqual(mood.today(), mood.today())
+        self.assertIn(mood.today(), mood.MOODS)
+        self.assertTrue(mood.set_today("tired"))
+        self.assertEqual(mood.today(), "tired")
+        self.assertIn("tired", mood.hint())
+        self.assertFalse(mood.set_today("nonsense"))
+        mood._forced = None
+        C.MOOD_ON = False
+        self.assertEqual(mood.today(), "normal")
+        C.MOOD_ON = True
+
+    def test_online_only_when_a_person_would_be(self):
+        from userbot import mood
+        rhythm_on, C.RHYTHM = C.RHYTHM, True
+        sleep_on, C.SLEEP_ON, school_on, C.SCHOOL_ON = C.SLEEP_ON, True, C.SCHOOL_ON, True
+        try:
+            monday = lambda h, m: datetime(2026, 10, 5, h, m)
+            self.assertIsNone(mood.next_look(monday(3, 0)))                 # asleep
+            self.assertEqual(mood.next_look(monday(9, 25))[1], 0)           # in class: stays offline
+            self.assertGreater(mood.next_look(monday(9, 12))[1], 0)         # a break: phone out
+            self.assertGreater(mood.next_look(monday(17, 30))[1], 0)        # free time
+        finally:
+            C.RHYTHM, C.SLEEP_ON, C.SCHOOL_ON = rhythm_on, sleep_on, school_on
+
+    def test_clips_only_when_allowed(self):
+        C.CLIPS_AUTO = False
+        self.assertEqual(wording.split_reply("ахах\n[voice смех]"), ["ахах"])
+        C.CLIPS_AUTO = True
+        self.assertEqual(wording.split_reply("ахах\n[voice смех]"), ["ахах", "[voice смех]"])
+        C.CLIPS_AUTO = False
+
+
 if __name__ == "__main__":
     unittest.main()

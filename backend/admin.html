@@ -387,6 +387,7 @@ function renderHeader() {
     if (status.asleep) chips.push('<span class="chip warn">asleep — answers in the morning</span>');
     else if (status.busy) chips.push('<span class="chip warn">at school — answers come late</span>');
     chips.push(`<span class="chip">${esc((status.models || []).join(" → "))}</span>`);
+    if (status.mood && status.mood !== "normal") chips.push(`<span class="chip">mood: ${esc(status.mood)}</span>`);
   }
   if (reachable && !problem) {
     $("userbotwhy").hidden = fresh;

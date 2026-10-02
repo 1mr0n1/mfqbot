@@ -226,6 +226,8 @@ def split_reply(reply: str, wanted: int = 0) -> list[str]:
     kept, texts = [], 0
     for p in parts:
         if media.MEDIA_LINE_RE.match(p):
+            if media.MEDIA_LINE_RE.match(p).group(1).lower() in ("voice", "video") and not C.CLIPS_AUTO:
+                continue  # a clip of yours goes out only when you said so
             if not any(media.MEDIA_LINE_RE.match(k) for k in kept):
                 kept.append(p)  # at most one media item
         elif texts < max(C.MAX_PARTS, wanted):  # wanted: they asked that many separate questions

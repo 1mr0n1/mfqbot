@@ -168,6 +168,11 @@ LOOKUP_ON = True               # a checkable fact in dispute is looked up on the
 
 FOLLOW_UP = (35, 100)           # after "щас" / "lemme check": seconds until the account comes back with something
 
+CLIPS_AUTO = False             # may the account answer with one of your saved clips by itself? (orders can always send them)
+
+MOOD_ON = True                 # a mood for the day tints the replies (see mood.py)
+PRESENCE_ON = True             # show up online like a person's day: breaks, free time, never at night
+
 # People
 INTRO_ON = os.environ.get("USERBOT_INTRO", "true").lower() in ("1", "true", "yes")  # unknown person -> "кто это?"
 ADD_CONTACTS = True            # once they say who they are, save them to your Telegram contacts under that name

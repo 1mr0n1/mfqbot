@@ -33,7 +33,7 @@ from telethon import events
 from telethon.tl.types import User
 from . import config as C
 from . import daylog, rhythm, toggles
-from . import pilot, trace
+from . import mood, pilot, trace
 from .autoprofile import bio_loop
 from . import app
 from .app import TELEGRAM_SERVICE_ID, asked, cancel, commander_ids, contacts, describe, forced, full_name, group_done, group_seen, http, label, log, names, our_texts, pending, recent_incoming, resolve_name, spawn, state
@@ -261,7 +261,8 @@ async def main():
     background = [asyncio.create_task(bio_loop(app.client, state)), asyncio.create_task(unread_loop()),
                   asyncio.create_task(summary_loop()), asyncio.create_task(command_loop()),
                   asyncio.create_task(nudge_loop()), asyncio.create_task(initiative_loop()),
-                  asyncio.create_task(heartbeat()), asyncio.create_task(report_loop())]
+                  asyncio.create_task(heartbeat()), asyncio.create_task(report_loop()),
+                  asyncio.create_task(mood.presence_loop(app.client, state.is_paused))]
     try:
         await app.client.run_until_disconnected()
     finally:

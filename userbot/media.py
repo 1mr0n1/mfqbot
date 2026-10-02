@@ -67,7 +67,7 @@ def remove_clip(tag: str) -> bool:
 def media_block(name: str) -> str:
     if not C.MEDIA_ENABLED:
         return ""
-    clips = load_clips()
+    clips = load_clips() if C.CLIPS_AUTO else {}   # your recorded clips are offered only if you allowed that
     voice = sorted(t for t, c in clips.items() if c["kind"] == "voice")
     video = sorted(t for t, c in clips.items() if c["kind"] == "video")
     lines = [

@@ -144,6 +144,10 @@ def family_role(username: str | None) -> str | None:
     return match.group(1).lower() if match else None
 
 
+def is_family(contact) -> bool:
+    return bool(family_role(getattr(contact, "username", None))) or profile(getattr(contact, "id", 0)).get("closeness") == "family"
+
+
 async def closeness(client, chat_id: int, contact, has_style: bool) -> str:
     """-> "family" | "close" | "known" | "stranger". Counted from how much you two have written; a value you put
     into profile.json yourself ("closeness_by": "you") is never overwritten."""

@@ -9,7 +9,7 @@ from telethon import errors, events, functions
 from telethon.tl.types import User
 from . import config as C
 from . import daylog, media, memory, pfp, rhythm, salam, toggles
-from . import people, pilot, trace
+from . import mood, people, pilot, trace
 from . import app, lessons
 from .app import COMMAND_RE, cancel, commander_ids, commanding, contacts, forced, full_name, group_done, group_names, http, log, names, our_ids, our_texts, pending, pilot_busy, resolve_name, send_as_bot, set_chat_mode, spawn, state, type_like_a_person
 from .groups import answer_in_group, cancel_group
@@ -30,6 +30,12 @@ async def on_command(event):
     replied = await event.get_reply_message() if event.is_reply else None
     await event.delete()
 
+    if arg == "mood":  # ".ai mood" shows today's; ".ai mood tired" sets it for today
+        if tag and not mood.set_today(tag):
+            await app.client.send_message("me", f"⚠️ moods: {', '.join(mood.MOODS)}")
+        else:
+            await app.client.send_message("me", f"🙂 mood today: {mood.today()}")
+        return
     if arg == "summary":
         await app.client.send_message("me", daylog.summary())
         return
@@ -609,6 +615,7 @@ async def command_loop():
                 "account": full_name(app.me), "paused": state.is_paused(), "approve": state.approve,
                 "asleep": rhythm.asleep(), "busy": rhythm.busy(), "models": C.MODELS, "mode": C.REPLY_MODE,
                 "toggles": toggles.snapshot(),
+                "mood": mood.today(),
                 "people": people.overview() if beat % 15 == 0 or new or beat <= 3 else None,
                 "groups": sorted(({"id": gid, "name": name, "on": gid not in state.disabled,
                                    "mode": "off" if gid in state.disabled else "chatty" if gid in state.chatty else "on"}

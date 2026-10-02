@@ -11,7 +11,7 @@ from telethon.tl.types import User
 from . import config as C
 from . import judge, lang, media, memory, punct, recall, rhythm
 from . import trace
-from . import app
+from . import app, mood, people
 from .app import full_name, http, log, to_chat_messages
 
 
@@ -197,6 +197,8 @@ async def generate(history, contact: User, extra: str = "") -> str | None:
     system += memory.facts_block(full_name(app.me)) + memory.notes_block(contact.id, full_name(contact))
     if C.SMART_SKIP:
         system += judge.REACT_HINT
+    if not people.is_family(contact):
+        system += mood.hint()  # family gets you as you always are
     system += extra  # what just happened outside the conversation (e.g. a profile photo change)
     try:
         body = {"messages": messages, "system": system, "max_tokens": 200, "temperature": C.TEMPERATURE,

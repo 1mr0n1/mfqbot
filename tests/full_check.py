@@ -203,6 +203,11 @@ async def commands():
     c = fresh()
     await dispatch(c, ".ai do замуть Тимура на 2 часа", ME.id, out=True)
     record(A, ".ai do <order>", "UpdateNotifySettingsRequest" in c.calls and "🛠" in saved_text(c), (c.calls, saved_text(c)))
+    c = fresh()
+    await dispatch(c, ".ai mood tired", ME.id, out=True)
+    from userbot import mood as mood_module
+    record(A, ".ai mood <name>", mood_module.today() == "tired" and "mood today: tired" in saved_text(c), saved_text(c))
+    mood_module._forced = None
     # a command-looking message the bot itself sent must not run
     c = fresh()
     app.our_texts[TIMUR.id] = [".ai pause"]

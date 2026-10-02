@@ -83,9 +83,10 @@ def wait_seconds(chat_id: int) -> float:
         # They wrote again while waiting: someone who keeps messaging gets looked at soon, not minutes later.
         _available_at[chat_id] = min(_available_at[chat_id], now + random.uniform(5, 20))
         return _available_at[chat_id] - now
+    from . import mood
     if busy():
         delay = random.uniform(*C.BUSY_DELAY)
-    elif C.SLOW_ON and random.random() < C.SLOW_CHANCE:
+    elif C.SLOW_ON and random.random() < C.SLOW_CHANCE * mood.slowdown():  # a tired or lazy day: more messages wait
         delay = random.uniform(*C.SLOW_DELAY)
     else:
         delay = 0

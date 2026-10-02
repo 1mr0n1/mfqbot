@@ -44,5 +44,5 @@ async def main():
         why = [t for k, t in events if k == "warning"]
         print(f"{'CALLED ' if called else 'ignored'} | {c['chat'][-1][0]}: {c['chat'][-1][1][:70]}\n          → {' / '.join(sent) or '(no reply)'}" + (f"   ⟨{why[0][:90]}⟩" if why else ""), flush=True)
         out.append({"case": c, "called": called, "sent": sent, "why": why}); json.dump(out, open(sys.argv[2], "w"), ensure_ascii=False, indent=1)
-        await asyncio.sleep(3)
+        await asyncio.sleep(0.2)
 asyncio.run(main())
