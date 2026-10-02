@@ -457,6 +457,10 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
     text = draft.lower()
     if DONE_RE.match(text) and not known_today:
         return "claim"
+    # a whole reply that is one past-tense verb about yourself ("Открыл", "Купил", "Пришёл") reports something you did
+    if not known_today and re.fullmatch(r"\W*(?:уже\s+|да,?\s+)?[а-яё]{3,}(?:ил|ал|ыл|ел|[её]л|ёс|ес)(?:ся)?\W*", text) \
+            and not re.search(r"\b(понял|узнал|слышал|видел|знал|думал|забыл|устал|нравил\w*|хотел)\b", text):
+        return "claim"
     if UNSURE_RE.search(text):
         return None  # already non-committal
     if RELAY_RE.search(them) and RELAY_OK_RE.search(text):

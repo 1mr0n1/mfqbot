@@ -249,7 +249,8 @@ class LateAdditions(Cases):
         self.check(lambda them, draft: judge.overreach(them, draft, ""), [
             ("ещё раз", "Отправил", "claim"), ("поставь", "Готово, аватарка обновлена", "claim"), ("ок", "Окей, отправлю", None),
             ("сосал?", "Нет", None), ("инста есть?", "Нет", None), ("Температура есть?", "Нет", "claim"),
-            ("Перезвони", "Щас наберу", "commitment"), ("Отанг уйдами?", "Йук, ишда", "claim")])
+            ("Перезвони", "Щас наберу", "commitment"), ("Отанг уйдами?", "Йук, ишда", "claim"),
+            ("Дверь ?", "Открыл", "claim"), ("хлеб", "Уже купил", "claim"), ("ясно", "Понял", None), ("ну что", "устал", None), ("гол забил", "Да, слышал", None)])
 
     def test_age_comes_from_the_birth_date(self):
         years = memory.age()
