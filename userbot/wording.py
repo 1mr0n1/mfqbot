@@ -191,6 +191,26 @@ def masculine(line: str) -> str:
 MEDIA_SPLIT_RE = re.compile(r"(\[(?:sticker|gif|voice|video)\s+[^\]]+\])", re.I)
 
 
+def same_thought(first: str, second: str) -> bool:
+    """Is the second line just the first one again — word for word, or rephrased ("Хорошо, поищу" / "Хорошо,
+    поищу позже"; "Нет, такого не слышал" / "не слышал про это")? A model offering two versions of one answer
+    looks, once both are sent, like a person texting everything twice."""
+    plain = lambda t: re.sub(r"[\W_]+", " ", t.lower().replace("ё", "е")).strip()
+    a, b = plain(first), plain(second)
+    if a == b or (a and b and (a in b or b in a)):
+        return True
+    if "?" in second and "?" not in first:
+        return False  # a statement and then a question back are two different things
+    if a.split()[0] == b.split()[0] and len(a.split()[0]) >= 5:
+        return True  # both start with the same word: a second go at the same sentence
+    stems = lambda t: {w[:5] for w in t.split() if len(w) >= 5}
+    sa, sb = stems(a), stems(b)
+    shared = sa & sb
+    if not shared:
+        return False
+    return len(shared) / max(1, min(len(sa), len(sb))) >= 0.5
+
+
 def split_reply(reply: str, wanted: int = 0) -> list[str]:
     """One part per line (media tags on their own). Text beyond MAX_PARTS messages is dropped, not glued together:
     when the model emits a pile of short lines it is imitating bursts badly, and only the start makes sense."""
@@ -201,8 +221,8 @@ def split_reply(reply: str, wanted: int = 0) -> list[str]:
             if not any(media.MEDIA_LINE_RE.match(k) for k in kept):
                 kept.append(p)  # at most one media item
         elif texts < max(C.MAX_PARTS, wanted):  # wanted: they asked that many separate questions
-            if any(re.sub(r"[\W_]+", " ", k.lower()).strip() == re.sub(r"[\W_]+", " ", p.lower()).strip() for k in kept):
-                continue  # the model wrote the same line twice
+            if any(same_thought(k, p) for k in kept if not media.MEDIA_LINE_RE.match(k)) and not wanted:
+                continue  # the model wrote the same thing twice, or the same thing in other words
             kept.append(p)
             texts += 1
     return kept
