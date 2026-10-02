@@ -650,8 +650,8 @@ async def who_is_this(chat_id: int, contact: User, who: str, history, their_text
     prof = people.profile(chat_id)
     if prof.get("who") in ("known", "unknown", "before"):
         return ""
-    if prof.get("who") is None and any(m.out for m in history):
-        people.save_profile(chat_id, who, who="before")  # you have talked before: no "who is this?" out of nowhere
+    if prof.get("who") is None and any(m.out for m in history) and (prof.get("messages") or 0) >= people.KNOWN_AT:
+        people.save_profile(chat_id, who, who="before")  # you two have talked plenty: no "who is this?" out of nowhere
         return ""
     info = await people.introduced(http, their_text)
     if info:

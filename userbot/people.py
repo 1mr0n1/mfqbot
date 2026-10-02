@@ -76,7 +76,8 @@ INTRO_RE = re.compile(r"\b(это|я|меня\s+зовут|зовут|this\s+is|
 WHO = ('Someone you didn\'t know was asked "who is this?" (or introduced themselves). Their messages:\n{text}\n\n'
        'If they say who they are, answer with one JSON object: {{"name": "<their first name, exactly as they wrote '
        'it>", "about": "<how they described themselves in a few of their own words: class, where you know them '
-       'from — or empty>"}}. If they did not say who they are, answer exactly NONE.')
+       'from — or empty>"}}. If they did not say who they are — or the answer is a joke, an insult, a dodge ("nobody", '
+       '"guess", "your mom", "a friend"), a celebrity or anything that is not a real person\'s name — answer exactly NONE.')
 ASK_HINT = ("\nYou don't know who this is: the number isn't in your contacts and you have never talked. Answer what "
             "they wrote in a word or two, and ask who it is — one short casual line in their language (\"а кто это?\", "
             "\"who's this?\", \"kim bu?\"). Nothing else.\n")
@@ -106,8 +107,10 @@ async def introduced(http: httpx.AsyncClient, text: str) -> dict | None:
     name = str(data.get("name") or "").strip()
     if not (2 <= len(name) <= 30) or name.lower() not in text.lower() or not re.fullmatch(r"[^\W\d_][\w .'ʻ’-]*", name):
         return None
-    if name.lower() in ("я", "это", "me", "i", "man", "men", "бот", "bot", "друг", "friend"):
-        return None
+    if re.search(r"^(я|это|me|i|man|men|бот|bot|друг|friend|никто|некто|кто-то|человек|неважно|угадай|аноним\w*|nobody|"
+                 r"someone|anyone|guess|anon\w*|бог|god|мама|папа|mom|dad|твой|твоя|your|путин|трамп|байден|обама|маск|месси|"
+                 r"роналду|наруто|бэтмен|putin|trump|biden|obama|musk|messi|ronaldo|naruto|batman)\b", name, re.I):
+        return None  # not a name
     about = str(data.get("about") or "").strip()
     return {"name": name[:1].upper() + name[1:], "about": about[:40] if about.lower() in text.lower() else ""}
 
