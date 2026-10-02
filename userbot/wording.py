@@ -104,7 +104,7 @@ identity_ignored: dict[int, int] = {}   # chat_id -> newest message id of an ide
 
 # attempts to get at the instructions, or to make the account say what it is in so many words
 PROBE_RE = re.compile(
-    r"system\s+prompt|your\s+(instructions|prompt|rules)|ignore\s+(all\s+)?(previous|prior|above)|forget\s+(all\s+)?(previous|your)|"
+    r"system\s+prompt|your\s+(\w+\s+)?(instructions|prompt|rules)|(?m:^\s*(system|assistant|user|developer)\s*:)|ignore\s+(all\s+)?(previous|prior|above)|forget\s+(all\s+)?(previous|your)|"
     r"language\s+model|what\s+model\s+are\s+you|"
     r"систем\w+\s+промпт|тво[йи]\s+(промпт|инструкци\w+)|забудь\s+(все\s+)?(правила|инструкци\w+|предыдущ\w+)|игнорируй\s+(все\s+)?(правила|инструкци\w+|предыдущ\w+)|"
     r"какая\s+у\s+тебя\s+модель|сколько\s+токенов|"
@@ -177,6 +177,9 @@ def strip_emoji(line: str, keep_one: bool) -> str:
     return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
+FOREIGN_SCRIPT_RE = re.compile("[\u0590-\u08ff\u0900-\u0dff\u0e00-\u0fff\u1100-\u11ff\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
+
+
 def clean_reply(reply: str) -> str:
     first = (app.me.first_name or "").strip() if app.me else ""
     keep_one = random.random() < C.EMOJI_KEEP_CHANCE
@@ -190,6 +193,8 @@ def clean_reply(reply: str) -> str:
         line = re.sub(r"^\s*\d{1,2}[.)]\s+(?=\D)", "", line)  # "1) …" list numbering
         if first:  # drop a "Name:" speaker label
             line = re.sub(rf"^\s*{re.escape(first)}\s*:\s*", "", line, flags=re.I)
+        if FOREIGN_SCRIPT_RE.search(line):
+            line = "?"  # Arabic, Chinese, Japanese…: you don't write in those — a puzzled "?" instead
         line = REPEAT_RE.sub(lambda m: m.group(1) * 8, line).strip()
         line = masculine(strip_emoji(line, keep_one))
         if line:
