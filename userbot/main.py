@@ -154,6 +154,21 @@ async def model_cost() -> str:
     return f"Models: {since}${used:.2f} used in total, ${total - used:.2f} left"
 
 
+async def cost_loop():
+    """Keep the dashboard's "what the models cost" line fresh."""
+    key = os.environ.get("OPENROUTER_API_KEY")
+    while key:
+        try:
+            async with httpx.AsyncClient(timeout=15) as web:
+                data = (await web.get("https://openrouter.ai/api/v1/credits", headers={"Authorization": f"Bearer {key}"})).json()["data"]
+            used, total = float(data.get("total_usage", 0)), float(data.get("total_credits", 0))
+            app.dashboard["cost"] = {"used": round(used, 2), "left": round(total - used, 2),
+                                     "since_report": round(used - state.spent, 2) if state.spent >= 0 else None}
+        except Exception:
+            pass
+        await asyncio.sleep(600)
+
+
 async def morning_report(day: datetime | None = None) -> str:
     return daylog.report(day, await model_cost())
 
@@ -262,7 +277,7 @@ async def main():
                   asyncio.create_task(summary_loop()), asyncio.create_task(command_loop()),
                   asyncio.create_task(nudge_loop()), asyncio.create_task(initiative_loop()),
                   asyncio.create_task(heartbeat()), asyncio.create_task(report_loop()),
-                  asyncio.create_task(mood.presence_loop(app.client, state.is_paused))]
+                  asyncio.create_task(mood.presence_loop(app.client, state.is_paused)), asyncio.create_task(cost_loop())]
     try:
         await app.client.run_until_disconnected()
     finally:

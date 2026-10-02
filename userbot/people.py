@@ -289,5 +289,25 @@ def overview() -> list[dict]:
             "closeness": prof.get("closeness") or "stranger", "set_by_you": prof.get("closeness_by") == "you",
             "messages": prof.get("messages"), "since": prof.get("first_seen") or "",
             "notes": [n["text"] for n in notes[-6:]],
-            "ask_later": [f"{t['what']} (from {t['ask_after']})" for t in pending[-4:]]})
+            "ask_later": [{"what": t["what"], "from": t["ask_after"]} for t in pending[-4:]]})
     return sorted(out, key=lambda p: ({"family": 0, "close": 1, "known": 2, "stranger": 3}.get(p["closeness"], 4), p["name"].lower()))
+
+
+def remove_note(chat_id: int, text: str) -> bool:
+    """Forget one thing noted about a person (from the dashboard)."""
+    notes = _read(chat_id, "notes.json", [])
+    kept = [n for n in notes if n["text"] != text]
+    if len(kept) == len(notes):
+        return False
+    _write(chat_id, profile(chat_id).get("telegram_name") or str(chat_id), "notes.json", kept)
+    return True
+
+
+def cancel_thread(chat_id: int, what: str) -> bool:
+    """Don't ask about that after all."""
+    items = threads(chat_id)
+    kept = [t for t in items if t["what"] != what]
+    if len(kept) == len(items):
+        return False
+    _write(chat_id, profile(chat_id).get("telegram_name") or str(chat_id), "threads.json", kept)
+    return True

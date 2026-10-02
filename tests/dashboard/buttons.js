@@ -100,6 +100,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     change(pRows[0].querySelector("select"), "close"); await sleep(30); ok("closeness select → person command", last().body.type === "person" && last().body.chat === String(p.id) && last().body.value === "close", JSON.stringify(last()));
   }
 
+  // report and cost
+  click($("reportyesterday")); await sleep(30); ok("Report: Yesterday → report command", last().body.type === "report" && last().body.value === "yesterday", JSON.stringify(last()));
+  click($("reporttoday")); await sleep(30); ok("Report: Today so far → report command", last().body.type === "report" && last().body.value === "today");
+  ok("Report box opens", !$("reporttext").hidden);
+  if (status.cost) ok("model cost is shown", /used/.test($("costline").textContent) && $("costline").textContent.includes(status.cost.used.toFixed(2)), $("costline").textContent);
+  const withNotes = (status.people || []).find(p => (p.notes || []).length);
+  if (withNotes) {
+    const rowN = [...$("people").querySelectorAll(".chatrow")].find(r => r.querySelector(".name").textContent.startsWith(withNotes.name));
+    const x = rowN && rowN.querySelector(".fact .x");
+    if (x) { click(x); await sleep(30); ok("People: × on a note → forget it", last().body.type === "person_note" && last().body.chat === String(withNotes.id) && last().body.text === withNotes.notes[0], JSON.stringify(last())); }
+  }
+
   // log
   const rowsIn = () => $("log").querySelectorAll(".row").length;
   const viewBtn = v => [...$("view").querySelectorAll("button")].find(b => b.dataset.v === v);

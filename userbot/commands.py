@@ -510,6 +510,17 @@ async def run_command(cmd: dict):
         trace.emit("system", group_names.get(gid, str(gid)), {
             "on": "Group: answers when called", "chatty": "Group: answers when called, and may join in on its own",
         }.get(mode, "Group: ignored") + " (set from the dashboard)")
+    elif kind == "report":  # the dashboard's Report buttons: yesterday, or today so far
+        from datetime import datetime as _dt
+        today = cmd.get("value") == "today"
+        app.dashboard["report"] = {"which": "today" if today else "yesterday", "text": daylog.report(_dt.now() if today else None),
+                                   "at": time.time()}
+    elif kind in ("person_note", "person_thread") and str(cmd.get("chat", "")).lstrip("-").isdigit():
+        pid, text = int(cmd["chat"]), cmd.get("text", "")
+        done = people.remove_note(pid, text) if kind == "person_note" else people.cancel_thread(pid, text)
+        if done:
+            trace.emit("system", people.profile(pid).get("telegram_name") or str(pid),
+                       ("Forgot the note: " if kind == "person_note" else "Won't ask about: ") + text[:120])
     elif kind == "person" and str(cmd.get("chat", "")).lstrip("-").isdigit():  # how close someone is, set by you
         pid, level = int(cmd["chat"]), cmd.get("value")
         if level in ("family", "close", "known", "stranger"):
@@ -616,6 +627,7 @@ async def command_loop():
                 "asleep": rhythm.asleep(), "busy": rhythm.busy(), "models": C.MODELS, "mode": C.REPLY_MODE,
                 "toggles": toggles.snapshot(),
                 "mood": mood.today(),
+                "cost": app.dashboard["cost"], "report": app.dashboard["report"],
                 "people": people.overview() if beat % 15 == 0 or new or beat <= 3 else None,
                 "groups": sorted(({"id": gid, "name": name, "on": gid not in state.disabled,
                                    "mode": "off" if gid in state.disabled else "chatty" if gid in state.chatty else "on"}

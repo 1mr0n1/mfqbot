@@ -226,5 +226,6 @@ def set_chat_mode(chat_id: int, mode: str):
         state.save()
 
 
+dashboard: dict = {"cost": None, "report": None}   # shown on the dashboard: model spend, the last report asked for
 pilot_busy = asyncio.Lock()
 
