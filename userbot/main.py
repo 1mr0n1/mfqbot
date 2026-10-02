@@ -216,15 +216,23 @@ IDENTITY_HINT = ("\nPart of their message is about who or what you are (a bot, a
                  "that you won't answer. Reply only to the rest of what they wrote.\n")
 
 
+REALLY_RE = re.compile(r"\b(точно|правда|реально|really|actually|rostdan)\b|\bэто\b|\bis\s+(this|that|it)\b", re.I)
+identity_ignored: dict[int, int] = {}   # chat_id -> newest message id of an identity question that was ignored
+
+
 def is_identity_question(sentence: str) -> bool:
-    return bool((BOT_QUESTION_RE.search(sentence) and ADDRESSED_RE.search(sentence))
-                or WHO_RE.search(sentence) or WHO_ALONE_RE.match(sentence))
+    if (BOT_QUESTION_RE.search(sentence) and ADDRESSED_RE.search(sentence)) or WHO_RE.search(sentence) \
+            or WHO_ALONE_RE.match(sentence):
+        return True
+    # "ты точно <имя>?", "is this really <name>?" — the same question with your name in it
+    return bool(me and "?" in sentence and REALLY_RE.search(sentence) and name_re().search(sentence))
 
 
-def identity_question(history) -> str | None:
-    """-> 'only' (nothing else was said), 'mixed' (there is also something to answer) or None."""
+def identity_question(history, after_id: int = 0) -> str | None:
+    """-> 'only' (nothing else was said), 'mixed' (there is also something to answer) or None.
+    after_id: messages up to this id were already ignored for it — they don't colour what comes later."""
     found, rest_words = False, 0
-    for msg in itertools.takewhile(lambda m: not m.out, history):
+    for msg in itertools.takewhile(lambda m: not m.out and getattr(m, "id", 0) > after_id, history):
         if getattr(msg, "photo", None) or getattr(msg, "voice", None):
             rest_words += 3  # media counts as something to answer
         for sentence in re.split(r"(?<=[.?!,;\n])\s*", msg.raw_text or ""):
@@ -271,10 +279,28 @@ def clean_reply(reply: str) -> str:
         if first:  # drop a "Name:" speaker label
             line = re.sub(rf"^\s*{re.escape(first)}\s*:\s*", "", line, flags=re.I)
         line = REPEAT_RE.sub(lambda m: m.group(1) * 8, line).strip()
-        line = strip_emoji(line, keep_one)
+        line = masculine(strip_emoji(line, keep_one))
         if line:
             lines.append(line)
     return "\n".join(lines)
+
+
+# You are a guy: a model sometimes writes first-person verbs in the feminine ("поняла", "была занята").
+_MASC = {"поняла": "понял", "сделала": "сделал", "хотела": "хотел", "думала": "думал", "забыла": "забыл", "устала": "устал",
+         "рада": "рад", "готова": "готов", "должна": "должен", "согласна": "согласен", "занята": "занят", "пришла": "пришёл",
+         "видела": "видел", "знала": "знал", "смогла": "смог", "уверена": "уверен", "написала": "написал",
+         "сказала": "сказал", "была": "был", "пошла": "пошёл", "спала": "спал", "ела": "ел", "взяла": "взял"}
+_FEM_RE = re.compile(r"\b(" + "|".join(_MASC) + r")\b", re.I)
+_SHE_RE = re.compile(r"\b(она|мама|мам|сестра|бабушка|т[её]тя|девушка|учительница|подруга|\w+[ая]\s+(сказала|написала|была))\b", re.I)
+
+
+def masculine(line: str) -> str:
+    if not C.OWNER_MALE or _SHE_RE.search(line):
+        return line  # the sentence is about a woman: leave it
+    def fix(match):
+        word = _MASC[match.group(1).lower()]
+        return word.capitalize() if match.group(1)[0].isupper() else word
+    return _FEM_RE.sub(fix, line)
 
 
 MEDIA_SPLIT_RE = re.compile(r"(\[(?:sticker|gif|voice|video)\s+[^\]]+\])", re.I)
@@ -634,7 +660,7 @@ async def reply_flow(chat_id: int, contact: User):
                                if m.raw_text)
 
         # Questions about who/what is answering are simply ignored — they are not a reason to hand the chat over.
-        identity = None if force else identity_question(history)
+        identity = None if force else identity_question(history, identity_ignored.get(chat_id, 0))
         reason = (await judge.sensitive_reason(http, full_name(me), history, keywords_only=identity is not None)
                   if C.HANDOFF and not force else None)
         if not reason and chat_id in state.manual and not force:
@@ -728,6 +754,7 @@ async def reply_flow(chat_id: int, contact: User):
             reply = greeting.reply  # fixed text, never written by the model
             trace.emit("decision", who, "They wrote the salam greeting → sending the fixed proper answer (model not used)")
         elif identity == "only":
+            identity_ignored[chat_id] = history[0].id
             log.info("%s: identity question ignored", who)
             daylog.record("ignored", who, their_text)
             trace.emit("decision", who, "They asked who/what is answering — ignoring it, no reply")
@@ -892,6 +919,16 @@ async def reply_flow(chat_id: int, contact: User):
                     await client.send_message("me", f"🤷 I couldn't write a good reply to {who} ({problem}).\n"
                                                     f"“{their_text[:300]}”\nThat one is yours.")
                     return
+
+        # Last gate: whatever the rewrites above produced, it still may not promise or claim things for you.
+        if from_model:
+            said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
+            late = judge.overreach(their_text, said, memory.today_note()) if said else None
+            if late:
+                neutral = judge.dodge(late, lang.base(lang.detect(their_text)))
+                trace.emit("decision", who, f"A rewrite still made a {late} (“{said[:50]}”) — sending “{neutral}” instead")
+                parts = ([fixed] if fixed else []) + [neutral]
+                reply = "\n".join(parts)
 
         # Show the draft on the dashboard for a moment; Cancel there stops it.
         draft_id = trace.new_draft_id()

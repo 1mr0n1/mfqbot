@@ -129,6 +129,7 @@ UNREAD_RESCAN_SECONDS = 45     # re-check the 30 most recent chats for unread DM
 
 REPEAT_LOOKBACK = 12           # a draft may not repeat a line from this many latest messages of the chat
 
+OWNER_MALE = os.environ.get("USERBOT_GENDER", "male").lower() != "female"  # first-person verb forms in Russian
 GROUNDED = True                # a draft that states things about your real life it cannot know is rewritten
 
 # Dry answers ("ок", "да", "норм") -> ask about their day / bring up a topic instead of letting the chat die

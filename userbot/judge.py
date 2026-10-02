@@ -336,14 +336,14 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
 
 # ---------- things the account must not decide or claim on its own ----------
 PLAN_RE = re.compile(
-    r"\bго\b|пойд[её]шь|ид[её]шь|прид[её]шь|зайд[её]шь|приедешь|когда\s+(буд|прид|приед|вый|зайд)\w+|через\s+сколько|"
+    r"\bго\b|убери\w*|покажи\w*|помой\w*|вынеси\w*|сделай\w*|напиши\s+(мне|потом|когда)|перезвони\w*|\bsend\b|\bcall\s+me\b|зайди\w*|залетай\w*|подключайся|\bскинь\b|скинешь|\b(ты\s+)?с\s+нами\b|пойд[её]шь|ид[её]шь|прид[её]шь|зайд[её]шь|приедешь|когда\s+(буд|прид|приед|вый|зайд)\w+|через\s+сколько|"
     r"set\s+(me|up)|can\s+(you|u)\s+(set|send|give|buy|get)|встрет\w*|давай\s+(в|на|завтра|сегодня|после)|поможешь|принес\w*|"
     r"отдашь|ждём|ждем|выходи|подойд[её]шь|переночу\w*|купи\w*|позвони\w*|забери\w*|сходи\w*|съезди\w*|приезжай\w*|"
     r"приходи\w*|заходи\w*|отнеси\w*|верни\w*|оплати\w*|закажи\w*|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
     r"\b(wanna|coming|come\s+(over|to)|meet|bring|let'?s)\b|kelasan\w*|borasan\w*|chiqasan\w*|uchrash\w*|olib\s+kel|"
     r"\b\w{3,}(asanmi|asizmi|asilami|asila|aymi|amizmi|olasanmi)\b|\bborib\s+kel|\bkelib\s+ket|\b(bor|kel|ol|ber|ayt)(ing|gin)?\b", re.I)
 COMMIT_RE = re.compile(
-    r"\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|переночую|куплю|"
+    r"\b(уберу|покажу|помою|вынесу|перезвоню|напишу|напомню|sending|on\s+it|will\s+do)\b|\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|переночую|куплю|"
     r"позвоню|заберу|схожу|съезжу|отнесу|верну|оплачу|закажу|поеду|пойду|"
     r"го|погнали|заходи|выхожу|иду|еду)\b|\bв\s+\d{1,2}([:.]\d\d)?\b|\bчерез\s+(час|пол\w*|минут\w*|\d+)|\bжду\b|\b(sure|ok|okay|yeah),?\s+(do|i'?ll|will|done)\b|\b(давай|ок|окей|хорошо|да|конечно)\b[\s,]+\b(приду|буду|зайду|го|давай|помогу)\b|"
     r"\b(i'?ll\s+(come|be|bring|help)|coming|on\s+my\s+way|let'?s\s+go|sure\s+let'?s|yeah\s+let'?s|im\s+down)\b|"
@@ -354,10 +354,10 @@ DID_RE = re.compile(
     r"\bdid\s+(u|you)\b|\bhave\s+(u|you)\b|\b\w{2,}(dingmi|dingizmi|ganmisan|ganmisiz|ibmi|dimi)\b", re.I)
 # yes/no questions about you right now that only you can answer: "ты выпил таблетки?", "папа дома?", "температура есть?"
 STATE_Q_RE = re.compile(
-    r"\bты\b[^?]*\b\w{2,}(ил|ал|ел|ял|ул|ыл|ёл)(а|и)?\b[^?]*\?|\b\w{2,}(ил|ал|ел|ял|ул|ыл)(а|и)?\s*\?"
-    r"|\b(есть|дома|тут|там|рядом|свободен|свободна|занят|занята|спишь|идешь|идёшь|едешь|готов|готова)\s*\?"
+    r"\bты\b[^?]*\b\w{2,}(ил|ал|ел|ял|ул|ыл|ёл)(а|и)?(ся|сь)?\b[^?]*\?|\b\w{2,}(ил|ал|ел|ял|ул|ыл)(а|и)?(ся|сь)?\s*\?"
+    r"|\b(есть|дома|там|рядом|свободен|свободна|занят|занята|идешь|идёшь|едешь|готов|готова)\s*\?"
     r"|\b\w{3,}(mi|misan|misiz)\s*\?", re.I)
-CLAIM_RE = re.compile(r"^\W*(да|нет|не|неа|ага|угу|ещё\s+нет|еще\s+нет|пока\s+нет|уже|yes|yeah|yep|no|nope|nah|not\s+yet|"
+CLAIM_RE = re.compile(r"^\W*(да|нет|нету|есть|не|неа|ага|угу|ещё\s+нет|еще\s+нет|пока\s+нет|уже|yes|yeah|yep|no|nope|nah|not\s+yet|"
                       r"ha|haa|yo['ʻ‘’]?q|yoq|xa|ха|йўқ|йук|ҳа|hali\s+yo['ʻ‘’]?q|"
                       r"\w{2,}(dim|madim|ganman|maganman))\b", re.I)
 AFFIRM_RE = re.compile(r"^\W*(да|ага|угу|ок|окей|оке\w*|хорошо|конечно|давай|го|погнали|sure|yeah|yes|yep|ok|okay|bet|"
@@ -423,8 +423,12 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
         return None  # "tell your dad…" → "ok, I'll tell him" is fine
     if PLAN_RE.search(them) and (COMMIT_RE.search(text) or AFFIRM_RE.match(text)):
         return "commitment"
-    if (DID_RE.search(them) or STATE_Q_RE.search(them)) and CLAIM_RE.match(text) and not known_today:
-        return "claim"
+    if (DID_RE.search(them) or STATE_Q_RE.search(them)) and not known_today:
+        # "yes"/"no", or the question's own word handed back as the answer ("ты сделал?" — "сделал", "дома?" — "дома")
+        first = re.match(r"\W*([^\W\d_]+)", text)
+        asked = set(re.findall(r"[^\W\d_]{3,}", them.lower())) - {"ты", "вы", "это", "что", "как", "the", "you"}
+        if CLAIM_RE.match(text) or (first and first.group(1) in asked and "?" in them):
+            return "claim"
     if C.GROUNDED and made_up(them, draft, known_today):
         return "situation"
     return None
