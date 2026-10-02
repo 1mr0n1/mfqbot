@@ -41,6 +41,12 @@ phone / tablet ──> https://your-panel.vercel.app   (this static page)
    gives you a permanent one.
 4. **Connect** — open the Vercel site on your phone, tap ⚙︎, paste the tunnel address and the token.
 
+## If the Vercel project is connected to the GitHub repo
+
+Then every push redeploys the site from the repository. The `vercel.json` at the repository's top level tells
+Vercel to serve this `dashboard/` folder (`outputDirectory`); without it the site would be an empty 404.
+Keep `dashboard/index.html` in sync with `backend/admin.html` (`dashboard/sync.sh`) before pushing.
+
 ## Updating the site
 
 After changing `backend/admin.html`: `dashboard/sync.sh && cd dashboard && vercel --prod`.
