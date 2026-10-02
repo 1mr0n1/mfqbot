@@ -582,7 +582,7 @@
  },
  {
   "order": "отправь голосовое смех в класс",
-  "want": "send_file|voice|голосов",
+  "want": "send_file\\(9 Б класс.*voice_note.: .True",
   "never": null,
   "trusted": true,
   "here": 17

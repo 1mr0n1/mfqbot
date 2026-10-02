@@ -326,6 +326,9 @@ class LateAdditions(Cases):
             ("бот, замуть класс на час", [("mute", {"chat": "класс", "hours": 1})]),
             ("замуть класс на полчаса", [("mute", {"chat": "класс", "hours": 0.5})]),
             ("напиши сюда привет", [("send_message", {"chat": "here", "text": "привет"})]),
+            ("напиши маме что я задержусь, и Лоле тоже", None),
+            ("не отвечай маме, я сам", [("bot_mode", {"chat": "маме", "mode": "manual"})]),
+            ("не пиши Тимуру", [("bot_mode", {"chat": "Тимуру", "mode": "manual"})]),
             ("убери фамилию", [("set_profile", {"last_name": ""})]), ("clear my bio", [("set_profile", {"bio": ""})])])
 
     def test_promise_to_come_back(self):

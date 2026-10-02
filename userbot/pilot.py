@@ -466,9 +466,17 @@ async def archive(ctx, run, chat, on=True):
     return f"{_name(entity)} {'archived' if on else 'unarchived'}"
 
 
+def _not_your_other_account(entity):
+    """Blocking or deleting the chat with your own other account would cut off the one giving the orders."""
+    from . import app
+    if getattr(entity, "id", None) in app.commander_ids:
+        raise Refused("that is your own other account — not doing that to it")
+
+
 @tool("user — block a person", risky=True)
 async def block(ctx, run, user):
     entity = await resolve(ctx, user, run["here"])
+    _not_your_other_account(entity)
     await ctx.client(functions.contacts.BlockRequest(id=entity))
     return f"{_name(entity)} blocked"
 
@@ -547,6 +555,7 @@ async def invite(ctx, run, chat, user):
 @tool("chat — wipe the message history on your side only (the chat stays)", risky=True)
 async def clear_history(ctx, run, chat):
     entity = await resolve(ctx, chat, run["here"])
+    _not_your_other_account(entity)
     await ctx.client(functions.messages.DeleteHistoryRequest(peer=entity, max_id=0, just_clear=True, revoke=False))
     return f"history with {_name(entity)} cleared on your side"
 
@@ -554,6 +563,7 @@ async def clear_history(ctx, run, chat):
 @tool("chat — delete a private chat from your list", risky=True)
 async def delete_chat(ctx, run, chat):
     entity = await resolve(ctx, chat, run["here"])
+    _not_your_other_account(entity)
     await ctx.client.delete_dialog(entity)
     return f"chat with {_name(entity)} deleted"
 
@@ -742,6 +752,9 @@ async def send_picture(ctx, run, chat, query):
 
 
 # ---------- what needs your yes ----------
+# "что там Kamila пишет?", "кто мне писал?": a question — the answer is the whole job
+QUESTION_ORDER_RE = re.compile(r"^\W*(?:а\s+)?(?:что|чё|че|чо|кто|о\s+ч[её]м|what|who)\b", re.I)
+WRITE_VERB_RE = re.compile(r"\b(напиши|ответь|отправь|скажи|перешли|скинь|передай|reply|send|write|tell|forward|answer)\b", re.I)
 READ_ONLY = {"list_chats", "find_chat", "read_chat", "search", "user_info", "web_search", "open_page", "list_clips"}
 SAME_CHAT_OK = {"send_message", "send_sticker", "send_gif", "react", "mark_read", "edit_last", "pin_last"}
 
@@ -752,7 +765,7 @@ async def named_in_order(ctx, run, ref) -> bool:
     try:
         entity = await resolve(ctx, ref, run["here"])
     except Exception:
-        return True  # the tool will report the problem itself
+        return False  # after reading other people's text, a chat that can't even be found is not one the order meant
     peer = utils.get_peer_id(entity)
     if peer in run["read"] or peer == ctx.me.id or peer == run["here"]:
         return True
@@ -784,6 +797,9 @@ async def needs_yes(ctx, run, name: str, args: dict) -> str | None:
     The second rule still holds for them, silently: it protects their order from other people's text, it does
     not question them."""
     trusted = run.get("trusted")
+    if name not in READ_ONLY and QUESTION_ORDER_RE.match(run["order"]) and not WRITE_VERB_RE.search(run["order"]) \
+            and not (name == "send_message" and str(args.get("chat", "")).lower() in ("here", "me", str(run["here"]))):
+        return "the order only asked what was written there — nothing else is done"
     if TOOLS[name][2] and not trusted:
         return "it can't be undone"
     if not run["read"] or name in READ_ONLY:

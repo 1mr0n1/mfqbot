@@ -66,6 +66,8 @@ def _say(m):
     names = _names(m.group("who"))
     if not text or not names or (m.group("text") is None and THIRD.search(text)):
         return None  # "скажи маме что я её люблю" needs rewording ("тебя"): the model's job
+    if m.group("text") is None and re.search(r"\b(?:и|а\s+ещё|а\s+еще|and)\s+\S+\s+(?:тоже|too|also)\W*$", text, re.I):
+        return None  # "напиши маме что я задержусь, и Лоле тоже": two people, the model splits it
     if m.group("text") is None and re.match(r"[^\s:]+(?:\s+[^\s:]+)?\s*:", text):
         return None  # "напиши Тимуру, Азизу: го в футбол" — the comma was between names
     return [("send_message", {"chat": who, "text": text}) for who in names]
@@ -87,6 +89,16 @@ def _say_plain(m):
             or raw == text and re.search("[A-Z]", who[:1]) and re.search("[A-Z]", text[:1]):
         return None  # "напиши Bobur Aliev здравствуйте": a two-word name
     return [("send_message", {"chat": who, "text": text})]
+
+
+@rule(r"(?:не\s+отвечай|не\s+пиши|перестань\s+отвечать|don'?t\s+(?:reply|answer)(?:\s+to)?)\s+" + WHO + r"(?:\s*,?\s*(?:я\s+сам\w*|сам\w*|i'?ll\s+do\s+it|myself))?")
+def _hands_off(m):
+    return [("bot_mode", {"chat": _clean(m.group("who")), "mode": "manual"})]
+
+
+@rule(r"(?:отвечай|снова\s+отвечай|можешь\s+отвечать|reply\s+to|answer)\s+" + WHO + r"\s+(?:снова|опять|сам|again)")
+def _hands_on(m):
+    return [("bot_mode", {"chat": _clean(m.group("who")), "mode": "auto"})]
 
 
 @rule(r"(?:заблокируй|заблочь|забань|block|ban)\s+" + WHO)

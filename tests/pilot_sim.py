@@ -45,6 +45,8 @@ class Fake:
         raise ValueError("not found")
     async def get_input_entity(self, e): return e
     async def get_messages(self, entity, limit=10, search=None, ids=None):
+        if ids is not None and entity == "me":  # a saved clip: a voice message in Saved Messages
+            return NS(id=ids, voice=True, video_note=None, media="VOICE", out=True, raw_text="")
         if entity is None:
             return [msg(i, t, o, c) for c, ms in CHATS.items() for i, (t, o) in enumerate(ms, 1) if search and search.lower() in t.lower()][:limit]
         cid = getattr(entity, "id", None)
@@ -66,6 +68,10 @@ async def main():
                  send=send, set_mode=lambda c, m: calls.append(f"mode({c})={m}"))
         for o in orders:
             calls.clear(); pilot._dialogs = (0.0, []); t = time.time()
+            from userbot import app
+            app.commander_ids.clear()
+            if o.get("trusted") and o.get("here"):
+                app.commander_ids.add(o["here"])   # an order from your other account comes from its own chat
             try:
                 if o.get("trusted") and not pilot.is_order(o["order"]):
                     report = "<<CHAT>>"   # from your other account: only a message that opens with a command is an order
