@@ -325,6 +325,8 @@ async def reply_flow(chat_id: int, contact: User):
             return
         their_text = "\n".join(m.raw_text for m in reversed(list(itertools.takewhile(lambda m: not m.out, history)))
                                if m.raw_text)
+        told = " ".join(m.raw_text or "" for m in list(itertools.dropwhile(lambda m: not m.out, history))[:40]
+                         if not m.out)   # what they told you earlier in this chat (not the question itself)
 
         # Questions about who/what is answering are simply ignored — they are not a reason to hand the chat over.
         identity = None if force else identity_question(history, identity_ignored.get(chat_id, 0))
@@ -548,8 +550,7 @@ async def reply_flow(chat_id: int, contact: User):
         if from_model:
             # It must not agree to plans or claim what you did or didn't do: rewrite once, then use a neutral phrase.
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
-            heard = " ".join(m.raw_text or "" for m in history[:40] if not m.out)   # what they told you in this chat
-            over = None if answer_each(several, parts, fixed) else judge.overreach(their_text, said, memory.today_note(), heard)
+            over = None if answer_each(several, parts, fixed) else judge.overreach(their_text, said, memory.today_note(), told)
             detail = not over and not several and judge.agrees_late(history, their_text, said, memory.today_note())
             if detail:
                 over = "commitment"  # "закажи такси" … "на 8 утра" — "хорошо, закажу"
@@ -566,7 +567,7 @@ async def reply_flow(chat_id: int, contact: User):
                     "yes or no — put it off briefly.\n")) or "")
                 again_parts = [p for p in split_reply(again, len(several)) if allow_media or not media.MEDIA_LINE_RE.match(p)]
                 again_said = " ".join(p for p in again_parts if not media.MEDIA_LINE_RE.match(p))
-                if again_said and looks_safe(again) and not judge.overreach(their_text, again_said, memory.today_note(), heard) \
+                if again_said and looks_safe(again) and not judge.overreach(their_text, again_said, memory.today_note(), told) \
                         and not judge.agrees_late(history, their_text, again_said, memory.today_note()):
                     reply, parts = again, ([fixed] if fixed else []) + again_parts
                 else:
@@ -714,8 +715,7 @@ async def reply_flow(chat_id: int, contact: User):
         if from_model:
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
             late = None if answer_each(several, parts, fixed) or not said \
-                else judge.overreach(their_text, said, memory.today_note(),
-                                     " ".join(m.raw_text or "" for m in history[:40] if not m.out))
+                else judge.overreach(their_text, said, memory.today_note(), told)
             if (researched and late in ("situation", "claim")) or (photo_msg and not pfp_failed and late == "claim"):
                 late = None
             if late:
