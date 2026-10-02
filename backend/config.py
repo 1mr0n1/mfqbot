@@ -32,6 +32,13 @@ MODELS = {
     "omni": {"provider": "nvidia", "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
              "name": "Nemotron 3 Nano Omni (sees images)", "vision": True,
              "no_think": {"chat_template_kwargs": {"enable_thinking": False}}},
+    # Paid through OpenRouter (credit on the account): no daily cap, no rate limiting to speak of.
+    "gemma": {"provider": "openrouter", "id": "google/gemma-4-31b-it", "name": "Gemma 4 31B", "vision": True},
+    "deepseek": {"provider": "openrouter", "id": "deepseek/deepseek-v4-flash", "name": "DeepSeek V4 Flash",
+                 "no_think": {"reasoning": {"enabled": False}}},
+    "flashlite": {"provider": "openrouter", "id": "google/gemini-3.1-flash-lite", "name": "Gemini 3.1 Flash Lite",
+                  "vision": True, "no_think": {"reasoning": {"enabled": False}}},
+    "haiku": {"provider": "openrouter", "id": "anthropic/claude-haiku-4.5", "name": "Claude Haiku 4.5", "vision": True},
     "local": {"provider": "local", "id": os.getenv("LOCAL_MODEL", "gemma-4-e4b-it-mlx"),
               "name": "Gemma 4 E4B (local)", "vision": True},
 }

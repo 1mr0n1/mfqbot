@@ -33,6 +33,7 @@ from . import config as C  # noqa: E402
 _tmp = tempfile.mkdtemp(prefix="userbot-sim-")
 C.DAYLOG_PATH = Path(_tmp) / "daylog.json"
 C.MEMORY_DIR = Path(_tmp) / "memory"
+C.LOOKUP_ON = False  # scripted chats don't go out to the web
 C.RETRY_DELAY = (0, 0)
 C.BETWEEN_MESSAGES = (0, 0)
 from . import state as state_module  # noqa: E402
