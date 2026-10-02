@@ -107,7 +107,8 @@ async def come_back(chat_id: int, contact: User, who: str, after_id: int, their_
         except Exception:
             log.exception("%s: follow-up could not be written", who)
         grounded = found is not None
-        if not text or not looks_safe(text) or DEFER_RE.search(text) or stale_parts(history, [text]) \
+        handing_over = re.fullmatch(r"\W*(вот|держи|лови|на|here|there you go|mana)\W*", text, re.I)  # nothing is attached
+        if not text or handing_over or not looks_safe(text) or DEFER_RE.search(text) or stale_parts(history, [text]) \
                 or (not grounded and judge.overreach(their_text, text, memory.today_note())):
             text = random.choice(CAME_BACK.get(lang.base(lang.detect(their_text)) or "ru", CAME_BACK["ru"]))
         if (await app.client.get_messages(chat_id, limit=1))[0].id != after_id:

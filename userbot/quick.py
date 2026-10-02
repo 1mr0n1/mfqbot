@@ -20,6 +20,7 @@ HERE = re.compile(r"^(?:сюда|тут|здесь|в\s+этот\s+чат|here|t
 def _clean(who: str) -> str:
     who = re.sub(r"^(?:чат[еу]?\s+с\s+|контакт[ау]?\s+|пользовател[яю]\s+|группу\s+|группе\s+|канал[еу]?\s+|в\s+|to\s+|the\s+)", "",
                  who.strip(), flags=re.I).strip()
+    who = re.sub(r"\s+(?:групп[ыуе]|чата?|канала?|group|chat|channel)$", "", who, flags=re.I).strip() or who
     return "here" if HERE.match(who) else who
 
 

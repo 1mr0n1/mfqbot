@@ -446,7 +446,7 @@ CRUDE_RE = re.compile(r"\b(сос[аи]\w*|[её]б\w*|дроч\w*|трах\w*|s
 
 
 # "Отправил", "Готово, поставил": a chat reply can't have DONE anything — only an order that really ran may say so
-DONE_RE = re.compile(r"^\W*(?:(?:ок(?:ей)?|хорошо|да|ладно|понял|ok(?:ay)?|yes|sure)[\s,.!]+)?(?:уже\s+)?(?:отправил|отправлено|"
+DONE_RE = re.compile(r"^\W*(?:(?:ок(?:ей)?|хорошо|да|ладно|понял|вот|держи|лови|всё|все|ok(?:ay)?|yes|sure|here)[\s,.!]+)?(?:уже\s+)?(?:отправил|отправлено|"
                      r"скинул|переслал|поставил|удалил|сохранил|написал\s+(?:ему|ей|им)|сделал|готово|сделано|добавил|зашёл|зашел|"
                      r"вступил|done|sent|saved|deleted|added|joined|yubordim|qildim)\b", re.I)
 
