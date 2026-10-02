@@ -1,5 +1,7 @@
 """Group chats: noticing when you are called, answering each person who called, and the limits on that."""
 import asyncio
+import re
+import random
 import time
 from datetime import datetime
 from telethon import errors
@@ -96,7 +98,57 @@ async def scan_groups():
     group_names.update(current)
 
 
-async def group_reply_flow(event, sender: User, force: bool = False):  # event: the Message (or NewMessage event)
+JOIN_HINT = ("\nThis is a GROUP chat. Below is the recent conversation; lines start with who wrote them ('You' is "
+             "you). NOBODY addressed you. Decide the way a real member of this group would whether to write anything:\n"
+             "- write if the last message is a question or a remark to everyone that you have a real answer or opinion "
+             "on, if they are talking about you, or if it continues an exchange you are already part of;\n"
+             "- stay out if the others are talking to each other, if it is not your business, if someone already "
+             "answered, or if all you could add is an agreement, a greeting or a filler.\n"
+             "Most of the time the right choice is to stay out. If you stay out, answer with exactly SKIP. Otherwise "
+             "write ONE short message in the way you write in this group — no greeting, no questions just to keep "
+             "talking, no stickers or GIFs.\n")
+join_log: dict[int, list[float]] = {}        # group -> when the account wrote there without being called
+join_tasks: dict[int, asyncio.Task] = {}     # group -> the "should I say something?" that is still settling
+
+
+def may_join(chat_id: int, msg, history) -> bool:
+    """The cheap part of the decision, before any model is asked: is this even a moment to consider speaking?"""
+    now = time.time()
+    recent = join_log[chat_id] = [t for t in join_log.get(chat_id, []) if now - t < 3600]
+    if len(recent) >= C.JOIN_PER_HOUR or (recent and now - recent[-1] < C.JOIN_GAP):
+        return False
+    text = msg.raw_text or ""
+    if not text.strip() or TEACHER_RE.search(text) or re.search(r"@\w{4,}", text):
+        return False  # nothing said, an adult speaking formally, or it is addressed to someone by @name
+    if getattr(msg, "reply_to_msg_id", None) and not any(m.out and m.id == msg.reply_to_msg_id for m in history):
+        return False  # a reply to somebody else's message
+    mine = next((m for m in history if m.out), None)
+    if len(history) >= 2 and all(m.out for m in history[:2]):
+        return False  # you spoke last, twice: wait for someone else
+    in_conversation = mine is not None and now - mine.date.timestamp() < C.JOIN_ACTIVE
+    return in_conversation or ("?" in text and random.random() < C.JOIN_COLD_CHANCE)
+
+
+def consider_joining(event, sender):
+    """Something was said in a group where the account may join in: think it over once the chat has settled."""
+    old = join_tasks.pop(event.chat_id, None)
+    if old:
+        old.cancel()  # a newer message: decide about the conversation as it is now
+
+    async def settle():
+        try:
+            await asyncio.sleep(rand(C.JOIN_SETTLE))
+            history = await app.client.get_messages(event.chat_id, limit=C.GROUP_CONTEXT)
+            if not history or history[0].id != event.id or not may_join(event.chat_id, event.message, history[1:]):
+                return
+            await group_reply_flow(event, sender, joining=True)
+        finally:
+            if join_tasks.get(event.chat_id) is asyncio.current_task():
+                join_tasks.pop(event.chat_id, None)
+    join_tasks[event.chat_id] = asyncio.create_task(settle())
+
+
+async def group_reply_flow(event, sender: User, force: bool = False, joining: bool = False):  # event: Message or NewMessage event
     """Someone mentioned you or replied to you in a group: answer that message, quoting it."""
     chat_id = event.chat_id
     message = getattr(event, "message", None)
@@ -132,11 +184,13 @@ async def group_reply_flow(event, sender: User, force: bool = False):  # event: 
                                 style=style_block(full_name(sender), text),
                                 now=datetime.now().strftime("%A %d %B %Y, %H:%M"),
                                 status=rhythm.status())
-        system += memory.facts_block(full_name(app.me)) + GROUP_HINT.format(sender=full_name(sender), message=text[:500])
+        system += memory.facts_block(full_name(app.me)) + (
+            JOIN_HINT if joining else GROUP_HINT.format(sender=full_name(sender), message=text[:500]))
         if identity_question([message]) == "mixed":
             system += IDENTITY_HINT
-        trace.emit("incoming", who, text[:300])
-        trace.emit("decision", who, "They called you in a group — writing a reply")
+        if not joining:  # a message nobody addressed to you is logged only if you decide to answer it
+            trace.emit("incoming", who, text[:300])
+            trace.emit("decision", who, "They called you in a group — writing a reply")
         ask = ("\n".join(lines) + f"\n\n---\nYou are “You” in this conversation. Write the one message You send now in "
                f"reply to {full_name(sender)}'s last message. Output only the text of that message.")
 
@@ -146,6 +200,13 @@ async def group_reply_flow(event, sender: User, force: bool = False):  # event: 
             return "" if resp.is_error else clean_reply(resp.json()["reply"])
 
         reply = await write()
+        if joining:
+            if not reply or re.match(r"\W*SKIP\b", reply, re.I) or "SKIP" in reply:
+                log.info("%s: not called, decided to stay out", who)
+                return
+            trace.emit("incoming", who, text[:300])
+            trace.emit("decision", who, "Not called, but decided to say something")
+            join_log.setdefault(chat_id, []).append(time.time())
         if not reply:
             trace.emit("warning", who, "No model answered — staying quiet in the group")
             return
@@ -180,7 +241,7 @@ async def group_reply_flow(event, sender: User, force: bool = False):  # event: 
         trace.emit("decision", who, "Typing…", draft_id=draft_id, phase="typing", index=0)
         await type_like_a_person(chat_id, reply)
         our_texts.setdefault(chat_id, []).append(reply)
-        sent = await app.client.send_message(chat_id, reply, reply_to=event.id)
+        sent = await app.client.send_message(chat_id, reply, reply_to=None if joining else event.id)
         our_ids.add(sent.id)
         trace.emit("sent", who, reply, draft_id=draft_id, index=0, final=True)
         log.info("%s: replied in group (%d chars)", who, len(reply))

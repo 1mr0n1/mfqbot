@@ -66,6 +66,14 @@ GROUP_FRESH = 15 * 60            # a mention found by the group scan is answered
 GROUP_PER_PERSON = 3             # answers to one person…
 GROUP_PER_GROUP = 6              # …and in one group overall…
 GROUP_WINDOW = 10 * 60           # …within this many seconds
+# Joining in: in groups you set to "Also joins in", the account may write without being called — when it judges
+# that a real member of the group would. Hard limits around that judgment:
+GROUP_JOIN_ON = True
+JOIN_SETTLE = (4, 9)             # seconds to let the conversation settle before deciding
+JOIN_GAP = 75                    # at least this long between two uncalled messages in one group
+JOIN_PER_HOUR = 10               # and at most this many per hour per group
+JOIN_ACTIVE = 10 * 60            # "you are part of the conversation" = you wrote there within this time
+JOIN_COLD_CHANCE = 0.15          # chance to even consider a message to everyone when you were not in the conversation
 GROUP_CONTEXT = 15               # how many recent group messages the model sees
 
 # Voice messages are transcribed locally with Whisper (see voice.py)

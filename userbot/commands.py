@@ -491,14 +491,19 @@ async def run_command(cmd: dict):
         trace.emit("system", "", "Approve-before-sending is ON: every draft waits for you" if state.approve
                    else "Approve-before-sending is OFF: drafts send by themselves")
     elif kind == "group" and str(cmd.get("chat", "")).lstrip("-").isdigit():  # the switch next to a group
-        gid, on = int(cmd["chat"]), cmd.get("value") == "on"
-        if on:
+        gid, mode = int(cmd["chat"]), cmd.get("value")
+        state.chatty.discard(gid)
+        if mode in ("on", "chatty"):
             state.disabled.discard(gid)
+            if mode == "chatty":
+                state.chatty.add(gid)
             state.save()
         else:
             state.disable(gid)
             cancel_group(gid)
-        trace.emit("system", group_names.get(gid, str(gid)), f"Group replies {'ON' if on else 'off'} (set from the dashboard)")
+        trace.emit("system", group_names.get(gid, str(gid)), {
+            "on": "Group: answers when called", "chatty": "Group: answers when called, and may join in on its own",
+        }.get(mode, "Group: ignored") + " (set from the dashboard)")
     elif kind == "person" and str(cmd.get("chat", "")).lstrip("-").isdigit():  # how close someone is, set by you
         pid, level = int(cmd["chat"]), cmd.get("value")
         if level in ("family", "close", "known", "stranger"):
@@ -607,7 +612,8 @@ async def command_loop():
                 "asleep": rhythm.asleep(), "busy": rhythm.busy(), "models": C.MODELS, "mode": C.REPLY_MODE,
                 "toggles": toggles.snapshot(),
                 "people": people.overview() if beat % 15 == 0 or new or beat <= 3 else None,
-                "groups": sorted(({"id": gid, "name": name, "on": gid not in state.disabled}
+                "groups": sorted(({"id": gid, "name": name, "on": gid not in state.disabled,
+                                   "mode": "off" if gid in state.disabled else "chatty" if gid in state.chatty else "on"}
                                   for gid, name in group_names.items()), key=lambda g: g["name"].lower()),
                 "chats": sorted(({"name": names.get(cid, str(cid)), "mode": state.mode_of(cid),
                                   "waiting": cid in pending, "held": state.handed_off(cid)}

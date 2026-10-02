@@ -38,7 +38,7 @@ from .autoprofile import bio_loop
 from . import app
 from .app import TELEGRAM_SERVICE_ID, asked, cancel, commander_ids, contacts, describe, forced, full_name, group_done, group_seen, http, label, log, names, our_texts, pending, push_history, recent_incoming, resolve_name, spawn, state
 from .commands import clip_by_name, command_loop, gather_order, obey, order_queue, own_photo_to_avatar, pin_commanders, save_clip_from_owner, teach
-from .groups import addressed_to_me, answer_in_group, group_ready, mention_allowed, scan_groups
+from .groups import addressed_to_me, answer_in_group, consider_joining, group_ready, mention_allowed, scan_groups
 from .replies import echo_of, flood_from, initiative_loop, nudge_loop, reply_flow, reply_to_unread, spam
 from .wording import name_re
 
@@ -109,8 +109,16 @@ async def on_incoming(event):
 
 @app.client.on(events.NewMessage(incoming=True))
 async def on_group_mention(event):
-    """Groups: when someone @mentions you, replies to one of your messages, or calls you by name."""
-    if not event.is_group or not addressed_to_me(event.message):
+    """Groups: when someone @mentions you, replies to one of your messages, or calls you by name — and, in groups
+    you allowed it in, when the account itself judges that it has something to say."""
+    if not event.is_group:
+        return
+    if not addressed_to_me(event.message):
+        if C.GROUP_JOIN_ON and event.chat_id in state.chatty and group_ready(event.chat_id) \
+                and time.time() - event.date.timestamp() <= C.IGNORE_OLDER_THAN and not state.approve:
+            sender = await event.get_sender()
+            if isinstance(sender, User) and not sender.bot:
+                consider_joining(event, sender)
         return
     if time.time() - event.date.timestamp() > C.IGNORE_OLDER_THAN or not group_ready(event.chat_id):
         return

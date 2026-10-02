@@ -27,6 +27,7 @@ TOGGLES = {
     "lookup":   ("LOOKUP_ON",       "Look facts up",        "A fact about the world in dispute is checked on the web before answering", "Abilities"),
     "remember": ("REMEMBER",        "Notes about people",   "Keeps facts people state about themselves", "Abilities"),
     "groups":   ("GROUPS",          "Group mentions",       "In groups, answers when you are mentioned or replied to", "Abilities"),
+    "join":     ("GROUP_JOIN_ON",   "Join group chats",     "In groups set to “Also joins in”, writes without being called when it fits", "Abilities"),
     "pfp":      ("PFP_FROM_CHATS",  "Profile photo on request", "Sets a photo someone sends and asks you to use", "Abilities"),
     "autobio":  ("AUTO_BIO",        "Auto-bio",             "Rewrites your bio every 6–14 hours", "Abilities"),
 }

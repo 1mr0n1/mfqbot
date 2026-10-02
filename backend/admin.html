@@ -150,7 +150,7 @@
   <div id="chats"><div class="empty">Chats show up here once someone writes.</div></div>
 
   <h2>Groups</h2>
-  <div class="hint">Groups this account is in. "Answers when called" = the bot replies when someone writes your name, your @username, or replies to you — and only then. "Answer now" replies to the latest message there. A group you leave or are removed from disappears from this list within a minute.</div>
+  <div class="hint">Groups this account is in. "Answers when called" = the bot replies when someone writes your name, your @username, or replies to you — and only then. "Also joins in" = it may also write without being called, when it judges that it has something to say (a few times an hour at most; never in reply to a formal message). "Answer now" replies to the latest message there. A group you leave or are removed from disappears from this list within a minute.</div>
   <div id="groups"><div class="empty">The list appears a minute after the userbot starts.</div></div>
 
   <h2>People</h2>
@@ -450,7 +450,7 @@ function renderGroups() {
       row = document.createElement("div");
       row.className = "chatrow";
       row.innerHTML = `<span class="name"></span>
-        <select><option value="on">Answers when called</option><option value="off">Ignored</option></select>
+        <select><option value="on">Answers when called</option><option value="chatty">Also joins in</option><option value="off">Ignored</option></select>
         <span class="state"></span><button class="answer">Answer now</button>
         <input type="text" placeholder="Write into this group…"><button class="primary say">Send</button>`;
       const sel = row.querySelector("select"), input = row.querySelector("input");
@@ -462,7 +462,7 @@ function renderGroups() {
       groupEls.set(g.id, row); box.appendChild(row);
     }
     row.querySelector(".name").textContent = g.name;
-    if (!row.dataset.pending || Date.now() - Number(row.dataset.pending) > 4000) row.querySelector("select").value = g.on ? "on" : "off";
+    if (!row.dataset.pending || Date.now() - Number(row.dataset.pending) > 4000) row.querySelector("select").value = g.mode || (g.on ? "on" : "off");
   }
   fold("groups");
 }
