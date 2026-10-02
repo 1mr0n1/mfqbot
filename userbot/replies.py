@@ -550,7 +550,8 @@ async def reply_flow(chat_id: int, contact: User):
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
             heard = " ".join(m.raw_text or "" for m in history[:40] if not m.out)   # what they told you in this chat
             over = None if answer_each(several, parts, fixed) else judge.overreach(their_text, said, memory.today_note(), heard)
-            if not over and not several and judge.agrees_late(history, their_text, said, memory.today_note()):
+            detail = not over and not several and judge.agrees_late(history, their_text, said, memory.today_note())
+            if detail:
                 over = "commitment"  # "закажи такси" … "на 8 утра" — "хорошо, закажу"
             if researched and over in ("situation", "claim"):
                 over = None  # "Белл получил патент в 1876" is the looked-up fact, not something about your own day
@@ -570,11 +571,17 @@ async def reply_flow(chat_id: int, contact: User):
                     reply, parts = again, ([fixed] if fixed else []) + again_parts
                 else:
                     neutral = judge.dodge(over, lang.spoken(history, their_text), their_text)
+                    if detail:  # they only added a detail: taking note of it is enough, and promises nothing
+                        neutral = random.choice(judge.NOTED.get(lang.spoken(history, their_text) or "ru", judge.NOTED["ru"]))
                     reply, parts = neutral, ([fixed] if fixed else []) + [neutral]
                 if over == "situation":  # only you know the answer: tell you, and how to tell the account
                     spawn(app.client.send_message("me", f"❓ {who} asked something only you know:\n“{their_text[:300]}”\n"
                                                     f"I answered: “{' / '.join(parts)[:200]}”. If it matters, answer "
                                                     "them yourself — or tell me with  .ai today <what's going on>."))
+                elif over == "commitment" and people.is_family(contact):  # family asked for something: you should know
+                    request = next((m.raw_text for m in history if not m.out and m.raw_text and judge.PLAN_RE.search(m.raw_text)), their_text)
+                    spawn(app.client.send_message("me", f"📌 {who} asked you for something:\n“{request[:300]}”\n"
+                                                    f"I didn't promise anything (answered “{' / '.join(parts)[:120]}”). It's yours."))
             parts = [p if media.MEDIA_LINE_RE.match(p) or p == fixed else quirks.fix_greeting(p, their_text, formal) if i == 0 else p
                      for i, p in enumerate(parts)]
             # Saying the exact same thing as a moment ago is what bots do: ask for a different wording once.

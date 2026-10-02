@@ -442,7 +442,7 @@ AFFIRM_RE = re.compile(r"^\W*(да|ага|угу|ок|окей|оке\w*|хор�
 UNSURE_RE = re.compile(r"don'?t\s+(know|remember)|не\s+знаю|не\s+помню|не\s+уверен|посмотр|может|хз|потом|позже|idk|not\s+sure|maybe|later|dunno|"
                        r"bilma|keyin", re.I)
 DODGE = {
-    "commitment": {"ru": ["не знаю ещё", "посмотрим", "не знаю, напишу", "пока не знаю"], "en": ["idk yet", "not sure yet", "will lyk"],
+    "commitment": {"ru": ["не знаю ещё", "посмотрим", "попозже", "пока не знаю"], "en": ["idk yet", "not sure yet", "will lyk"],
                    "uz": ["bilmasam", "hali bilmayman", "keyin aytaman"]},
     "claim": {"ru": ["потом скажу", "потом расскажу"], "en": ["tell u later"], "uz": ["keyin aytaman"]},
     "situation": {"ru": ["не знаю, ща гляну", "ща посмотрю", "пока не знаю"], "en": ["idk yet, lemme check", "not sure rn"],
@@ -604,6 +604,9 @@ ASIDE = {  # nobody says "I don't know" to "where are you" or "what are you doin
     "where": {"ru": ["а что?", "а чё такое?", "а что случилось?"], "en": ["why?", "why whats up"], "uz": ["nimaga?", "nima bo'ldi?"]},
     "doing": {"ru": ["да ничего", "ничего особо", "да так"], "en": ["nm", "nothing much"], "uz": ["hech narsa", "shunchaki"]},
 }
+
+
+NOTED = {"ru": ["понял", "ясно", "ага, понял"], "en": ["got it", "i see"], "uz": ["tushunarli", "tushundim"]}
 
 
 def agrees_late(history, them: str, draft: str, known_today: str = "") -> bool:
