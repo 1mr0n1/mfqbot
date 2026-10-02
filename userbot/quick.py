@@ -147,6 +147,16 @@ def _bio(m):
     return [("set_profile", {"bio": (m.group("text") or m.group("text2")).strip()})]
 
 
+@rule(r"(?:поменяй|смени|измени|поставь|change|set)\s+(?:мо[её]\s+|my\s+)?(?:имя|first\s+name|name)\s+(?:на|to)\s*:?\s*[\"«“]?(?P<name>[^\"«»“”]{1,40}?)[\"»”]?")
+def _first_name(m):
+    return [("set_profile", {"first_name": m.group("name").strip()})]
+
+
+@rule(r"(?:поменяй|смени|измени|поставь|change|set)\s+(?:мою\s+|my\s+)?(?:фамилию|last\s+name|surname)\s+(?:на|to)\s*:?\s*[\"«“]?(?P<name>[^\"«»“”]{0,40}?)[\"»”]?")
+def _last_name(m):
+    return [("set_profile", {"last_name": m.group("name").strip()})]
+
+
 @rule(r"(?:удали|убери|сними|remove|delete)\s+(?:текущую\s+|current\s+)?(?:аву|аватарку|аватар|фото\s+профиля|pfp|avatar)")
 def _avatar_current(m):
     return [("remove_avatar", {"which": "current"})]

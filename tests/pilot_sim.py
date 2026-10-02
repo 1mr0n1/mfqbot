@@ -11,7 +11,7 @@ pilot.trace = trace
 pilot.people = lambda: "Family: @mom_x is my mom, @sis_x is my little sister, @uncle_x is my uncle. Best friend: Шерзод. Cuh = @cuh_x."
 def user(i, first, last=None, username=None): return User(id=i, first_name=first, last_name=last, username=username)
 PEOPLE = [user(11, "Тимур Ким", "9 Б"), user(12, "Dilnoza", "Karimova", "mom_x"), user(13, "Азиз", None, "aziz"), user(14, "Rustam"),
-          user(15, "max"), user(16, "Шерзод"), user(17, "Jasur", None, "cuh_x"), user(18, "Anvar", "Aliev", "uncle_x"), user(19, "Лола", None, "sis_x"),
+          user(15, "Maks"), user(16, "Шерзод"), user(17, "Jasur", None, "cuh_x"), user(18, "Anvar", "Aliev", "uncle_x"), user(19, "Лола", None, "sis_x"),
           user(20, "Олег", "Петрович"), user(21, "Kamila")]
 GROUPS = [Channel(id=500, title="9 Б класс", photo=None, date=datetime.now(), megagroup=True),
           Channel(id=501, title="Футбол во дворе", photo=None, date=datetime.now(), megagroup=True),

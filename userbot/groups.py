@@ -12,7 +12,7 @@ from . import trace
 from . import app
 from .app import commander_ids, describe, full_name, group_done, group_names, group_seen, hold_draft, http, log, our_ids, our_texts, pacing_on, rand, state, type_like_a_person
 from .drafting import persona, punct_profile, style_block, style_stats
-from .replies import TEACHER_RE
+from .replies import DEFER_RE, TEACHER_RE
 from .wording import IDENTITY_HINT, clean_reply, identity_question, looks_safe, name_re, split_reply, stale_parts
 
 
@@ -219,6 +219,11 @@ async def group_reply_flow(event, sender: User, force: bool = False, joining: bo
                                 "that. Put it off in a few words without agreeing or confirming.\n")
             reply = again if again and not judge.overreach(text, again, memory.today_note()) \
                 else judge.dodge(over, lang.base(lang.detect(text)))
+        if reply and DEFER_RE.search(reply):  # in a group nobody waits for "ща гляну": answer now, or say you can't
+            again = await write("\nDon't say that you'll look, check or send something in a moment. Either answer now "
+                                "or say in a few words that you don't know / can't.\n")
+            reply = again if again and not DEFER_RE.search(again) and not judge.overreach(text, again, memory.today_note()) \
+                else judge.dodge("commitment", lang.base(lang.detect(text)))
         if stale_parts(history, split_reply(reply)):
             again = await write("\nDon't repeat a line that is already in the conversation — not theirs, not yours.\n")
             reply = again if again and not stale_parts(history, split_reply(again)) else ""
