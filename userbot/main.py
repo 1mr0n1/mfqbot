@@ -37,7 +37,7 @@ from . import pilot, trace
 from .autoprofile import bio_loop
 from . import app
 from .app import TELEGRAM_SERVICE_ID, asked, cancel, commander_ids, contacts, describe, forced, full_name, group_done, group_seen, http, label, log, names, our_texts, pending, push_history, recent_incoming, resolve_name, spawn, state
-from .commands import command_loop, gather_order, obey, order_queue, own_photo_to_avatar, pin_commanders, save_clip_from_owner, teach
+from .commands import clip_by_name, command_loop, gather_order, obey, order_queue, own_photo_to_avatar, pin_commanders, save_clip_from_owner, teach
 from .groups import addressed_to_me, answer_in_group, group_ready, mention_allowed, scan_groups
 from .replies import echo_of, flood_from, initiative_loop, nudge_loop, reply_flow, reply_to_unread, spam
 from .wording import name_re
@@ -75,7 +75,8 @@ async def on_incoming(event):
     trace.emit("incoming", who, describe(event.message)[:300])
     spawn(push_history(event.chat_id))
     if sender.id in commander_ids:
-        if await teach(event) or await save_clip_from_owner(event) or await own_photo_to_avatar(event):
+        if await teach(event) or await save_clip_from_owner(event) or await own_photo_to_avatar(event) \
+                or await clip_by_name(event, event.raw_text):
             return
         answering = pilot.asked_back and pilot.asked_back["chat"] == event.chat_id and time.time() - pilot.asked_back["at"] < 180
         if pilot.is_order(event.raw_text or "") or event.chat_id in order_queue or answering:
@@ -119,6 +120,8 @@ async def on_group_mention(event):
     group_seen[event.chat_id] = max(group_seen.get(event.chat_id, 0), event.id)
     if event.sender_id in commander_ids and (event.raw_text or "").strip():
         order = name_re().sub(" ", event.raw_text).strip(" ,:")  # in a group: only a message that opens with the order
+        if await clip_by_name(event, order):
+            return
         if order and pilot.ORDER_RE.match(order) and await obey(event, order):
             return
     sender = await event.get_sender()

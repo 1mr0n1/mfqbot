@@ -338,6 +338,28 @@ SAVE_CLIP_RE = re.compile(r"^\W*(?:сохрани|запиши|save)\b(?:\s+(?:�
                           r"[\"«“'‘]?(?P<tag>[^\W\d_][^\"«»“”'‘’\n]{1,38}?)[\"»”'’]?\W*$", re.I)
 
 
+async def clip_by_name(event, text: str) -> bool:
+    """Your other account just says the name of a saved clip ("смех", in a group: "<your name>, смех"):
+    that clip is sent right there. -> True if the message was a clip's name."""
+    said = " ".join(re.sub(r"[^\w\s-]+", " ", (text or "").lower()).split())
+    said = re.sub(r"^(?:отправь|скинь|кинь|включи|send|play)\s+(?:голосовое\s+|войс\s+|voice\s+|clip\s+)?", "", said)
+    clips = media.load_clips()
+    if not said or said not in clips:
+        return False
+    original = await app.client.get_messages("me", ids=clips[said]["msg_id"])
+    if not original or not original.media:
+        await send_as_bot(event.chat_id, f"клип «{said}» пропал из Избранного", reply_to=event.id)
+        return True
+    kind = clips[said]["kind"]
+    our_texts.setdefault(event.chat_id, []).append("")
+    sent = await app.client.send_file(event.chat_id, original.media, voice_note=kind == "voice", video_note=kind == "video")
+    our_ids.add(sent.id)
+    state.record_sent(event.chat_id, sent.id)
+    state.mark_handled(event.chat_id, event.id)
+    trace.emit("sent", names.get(event.chat_id) or group_names.get(event.chat_id, ""), f"[{kind} clip “{said}”]")
+    return True
+
+
 async def teach(event) -> bool:
     """Your other account is teaching the account how to behave (see lessons.py). -> True if this message was that."""
     parsed = lessons.parse(event.raw_text or "")
