@@ -217,7 +217,7 @@ CHAT_ENGLISH = {
 _uz_words: set[str] | None = None   # an Uzbek dictionary, if you downloaded one (userbot/get_uz_dictionary.py)
 
 
-def in_uz_dictionary(word: str) -> bool:
+def in_uz_dictionary(word: str, min_stem: int = 3) -> bool:
     """Is this a real Uzbek word — the dictionary form, or that form with endings added (kitob → kitoblarimizda)?"""
     global _uz_words
     if _uz_words is None:
@@ -228,6 +228,8 @@ def in_uz_dictionary(word: str) -> bool:
     word = re.sub("[ʻ‘’`ʼ]", "'", word.lower())
     for form in (word, word.replace("'", "")):
         for cut in range(len(form), 2, -1):  # Uzbek stacks endings on the stem: try the word, then ever shorter stems
+            if cut < min_stem and cut != len(form):
+                break
             if form[:cut] in _uz_words and (cut == len(form) or cut >= 4 or len(form) >= 6):
                 return True
     return False

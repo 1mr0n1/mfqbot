@@ -62,7 +62,11 @@ async def main():
                  send=send, set_mode=lambda c, m: calls.append(f"mode({c})={m}"))
         for o in orders:
             calls.clear(); pilot._dialogs = (0.0, []); t = time.time()
-            try: report = await pilot.run(ctx, o["order"], o.get("here"), trusted=bool(o.get("trusted")), may_chat=bool(o.get("trusted"))) or "<<CHAT>>"
+            try:
+                if o.get("trusted") and not pilot.is_order(o["order"]):
+                    report = "<<CHAT>>"   # from your other account: only a message that opens with a command is an order
+                else:
+                    report = await pilot.run(ctx, o["order"], o.get("here"), trusted=bool(o.get("trusted")), may_chat=bool(o.get("trusted"))) or "<<CHAT>>"
             except Exception as e: report = f"CRASH {type(e).__name__}: {e}"
             blob = " || ".join(calls) + " ## " + report
             ok = (not o.get("want") or re.search(o["want"], blob, re.I | re.S) is not None) and \

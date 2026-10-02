@@ -76,7 +76,9 @@ def contact_style_block(path, incoming: str) -> str:
     # Which language do you answer in when they write like this? Not always the same one: pick with the same odds
     # as in your real chat (with your mom, Russian about as often as Uzbek) — unless one is forced for a rewrite.
     odds = Counter(p["lang"] for p in relevant if p["lang"] in ("ru", "uz", "en"))
-    real = {k: v for k, v in odds.items() if k != "en" or v > sum(odds.values()) * 0.5}  # "ok"/"da" look English
+    total = sum(odds.values()) or 1
+    real = {k: v for k, v in odds.items() if (k != "en" or v > total * 0.5)   # "ok"/"da" look English
+            and v >= total * 0.08}                                            # a language you barely use with them is noise
     reply_lang = (FORCE_LANG.pop(str(path), None)
                   or (random.choices(list(real), weights=list(real.values()))[0] if real else wanted))
     in_lang = [m for m in data["examples"] if lang.base(lang.detect(m)) == reply_lang] or data["examples"]

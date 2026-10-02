@@ -278,10 +278,13 @@ class LateAdditions(Cases):
         self.assertFalse(allowed(("Timur", "кто идет?", 3), ("You", "я иду", 1), ("You", "в 6", 1), ("Timur", "ок", 0)))
 
     def test_language(self):
-        cases = [("привет как дела", "ru"), ("hello how are you", "en"), ("privet kak dela", "ru-latn"), ("idk yet lemme check", "en"),
-                 ("не знаю ещё, потом скажу", "ru"), ("завтра контрольная по физике", "ru")]
+        cases = [("привет как дела", "ru"), ("hello how are you", "en"), ("privet kak dela", "ru-latn"), ("idk yet, lemme check", "en"),
+                 ("не знаю ещё, потом скажу", "ru"), ("завтра контрольная по физике", "ru"), ("idk man", "en"),
+                 ("lol man ur trash", "en"), ("norm a u tebya", "ru-latn"), ("нога болит после футбола", "ru"),
+                 ("Яхши, рахмат", "uz"), ("Отанг уйдами?", "uz"), ("хорошо, рахмат тебе", "ru"), ("qalesan", "uz")]
         if judge.in_uz_dictionary("kitob"):  # needs the dictionary: .venv/bin/python -m userbot.get_uz_dictionary
-            cases += [("Bilmadim, qarayman", "uz"), ("Tel qilaman", "uz"), ("Xop, rahmat", "uz"), ("Мактабга бордингми", "uz")]
+            cases += [("Bilmadim, qarayman", "uz"), ("Tel qilaman", "uz"), ("Xop, rahmat", "uz"), ("Мактабга бордингми", "uz"),
+                      ("maktabga bordingmi", "uz"), ("Hozir dars qilmayapman", "uz"), ("телефон машина компьютер", "ru")]
         self.check(lang.detect, cases)
 
     def test_relative_names_go_into_contacts_with_their_telegram_name(self):
