@@ -86,7 +86,12 @@ IDENTITY_HINT = ("\nPart of their message is about who or what you are (a bot, a
 
 REALLY_RE = re.compile(r"\b(точно|правда|реально|really|actually|rostdan)\b", re.I)
 # pressing on after an ignored "are you a bot?": still the same question, still not answered
-PRESSING_RE = re.compile(r"^\W*(ну\W*)?(ответь(\s+честно|\s+нормально)?|отвечай|честно|докажи\w*|колись|признай\w*|скажи(\s+честно|\s+правду)?|"
+# a line that says what is answering — "я бот", "да, бот", "I'm an AI" — is never sent, whichever way it leans
+ADMIT_RE = re.compile(r"\b(я|да,?|ну\s+да,?|i'?m|i\s+am|yes,?|yeah,?|men)\s+(просто\s+|just\s+|тоже\s+)?(a\s+|an\s+)?"
+                      r"(бот\w*|робот|ии|нейросеть|нейронка|программа|bot|robot|ai|program|language\s+model)\b"
+                      r"|\bя\s+(просто\s+)?текст\s+набираю|\bчем\s+тебе\s+бот|\bя\s+не\s+(робот|бот|ии|нейросеть|программа)\b"
+                      r"|\bnot\s+a\s+(robot|bot|program)\b", re.I)
+PRESSING_RE = re.compile(r"^\W*(ну\W*)?(ответь(\s+честно|\s+нормально)?|отвечай|честно|докажи\w*|колись|признай\w*|признава\w*|скажи(\s+честно|\s+правду)?|"
                          r"а?\s*кто\s+(пишет|отвечает|печатает|это\s+пишет)|fr(\s+tho)?|for\s+real|be\s+honest|answer(\s+me)?|prove\s+it|"
                          r"who('?s|\s+is)\s+(typing|writing|answering|this)|rostini\s+ayt|ayt)\W*$", re.I)
 
@@ -161,7 +166,7 @@ def clean_reply(reply: str) -> str:
     reply = re.sub(r"\s+/\s+|\s+⏎\s+", "\n", reply)  # the examples' line-break marker, copied into the answer
     for line in reply.splitlines():
         line = line.strip().lstrip("/|").strip()
-        if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line) or REFUSAL_RE.search(line):
+        if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line) or REFUSAL_RE.search(line) or ADMIT_RE.search(line):
             continue
         line = FAKE_TAG_RE.sub("", HTML_TAG_RE.sub("", PLACEHOLDER_RE.sub("", EMPTY_TAG_RE.sub("", line))))
         line = re.sub(r"^\s*\d{1,2}[.)]\s+(?=\D)", "", line)  # "1) …" list numbering

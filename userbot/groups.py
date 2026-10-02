@@ -13,7 +13,7 @@ from . import app
 from .app import commander_ids, describe, full_name, group_done, group_names, group_seen, hold_draft, http, log, our_ids, our_texts, pacing_on, rand, state, type_like_a_person
 from .drafting import persona, punct_profile, style_block, style_stats
 from .replies import DEFER_RE, TEACHER_RE
-from .wording import IDENTITY_HINT, clean_reply, identity_question, looks_safe, name_re, split_reply, stale_parts
+from .wording import IDENTITY_HINT, PRESSING_RE, clean_reply, identity_question, looks_safe, name_re, split_reply, stale_parts
 
 
 GROUP_HINT = ("\nThis is a GROUP chat. Below is the recent conversation; lines start with who wrote them ('You' is "
@@ -107,6 +107,7 @@ JOIN_HINT = ("\nThis is a GROUP chat. Below is the recent conversation; lines st
              "Most of the time the right choice is to stay out. If you stay out, answer with exactly SKIP. Otherwise "
              "write ONE short message in the way you write in this group — no greeting, no questions just to keep "
              "talking, no stickers or GIFs.\n")
+identity_asked: dict[tuple[int, int], float] = {}   # (group, person) -> when their "are you a bot?" was last ignored
 join_log: dict[int, list[float]] = {}        # group -> when the account wrote there without being called
 join_tasks: dict[int, asyncio.Task] = {}     # group -> the "should I say something?" that is still settling
 
@@ -158,7 +159,10 @@ async def group_reply_flow(event, sender: User, force: bool = False, joining: bo
     try:
         await asyncio.sleep(0 if force else rhythm.wait_seconds(chat_id) + rand(C.DEBOUNCE))
         text = event.raw_text or ""
-        if not force and identity_question([message]) == "only":
+        plain = name_re().sub(" ", text).strip(" ,:")   # what they said, without your name
+        pressed = identity_asked.get((chat_id, sender.id), 0) > time.time() - 600 and bool(PRESSING_RE.match(plain))
+        if not force and (identity_question([message]) == "only" or pressed):
+            identity_asked[(chat_id, sender.id)] = time.time()  # insisting right after ("признавайся") is ignored too
             trace.emit("decision", who, "They asked who/what is answering — ignoring it, no reply")
             daylog.record("ignored", who, text)
             return
@@ -231,7 +235,7 @@ async def group_reply_flow(event, sender: User, force: bool = False, joining: bo
         parts = [quirks.shorten(p, limit) for p in split_reply(reply) if not media.MEDIA_LINE_RE.match(p)]
         habits = punct_profile(sender)  # no textbook full stops in a group either
         reply = "\n".join(p for p in (punct.apply(p, habits) for p in parts[:2]) if p)
-        if not reply or not looks_safe(reply) or (C.REVIEW and await judge.review(http, text, reply)):
+        if not reply or not looks_safe(reply) or (C.REVIEW and await judge.review(http, plain or text, reply)):
             trace.emit("warning", who, f"Draft for the group wasn't good enough — staying quiet: {reply[:120]}")
             return
         draft_id = trace.new_draft_id()
