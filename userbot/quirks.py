@@ -39,12 +39,14 @@ ASKING_RE = re.compile(r"\?|^\W*(кто|что|чё|че|чо|где|куда|к
                        r"who'?s|what'?s|who|what|where|when|why|how|which|and\s+(who|what|where|when|how)|а\s+(кто|что|где|когда|как|сколько)|kim|nima|qayer\w*|qachon|nega|qanday|necha|qancha)\b", re.I)
 
 
-def questions_in(history, limit: int = 3) -> list:
+def questions_in(history, limit: int = 3, after_id: int = 0, skip=None) -> list:
     """Their unanswered messages that each ask something, oldest first — only when there are at least two
     different ones. Then every question gets its own answer, sent as a reply to that message."""
     asked, seen = [], set()
-    for msg in reversed(list(itertools.takewhile(lambda m: not m.out, history))):
+    for msg in reversed(list(itertools.takewhile(lambda m: not m.out and getattr(m, "id", 0) > after_id, history))):
         text = (msg.raw_text or "").strip()
+        if skip and skip(text):
+            continue  # e.g. a "who is answering?" that is being ignored
         key = re.sub(r"[\W_]+", " ", text.lower()).strip()
         if not key or key in seen or not ASKING_RE.search(text):
             continue

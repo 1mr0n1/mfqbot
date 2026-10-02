@@ -336,8 +336,16 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
     # is how you often write, so it passes; Uzbek or English out of nowhere does not.
     if expected is None and len(them.split()) >= 2 and len(text.split()) >= 2:
         if draft_lang == "uz" and their_lang != "uz":
-            return f"wrong language (uz instead of {their_lang})"
-        if draft_lang == "en" and their_lang == "ru" and their_cyrillic and not re.search("[а-яё]", text, re.I):
+            # only when they clearly wrote Russian or English: a short or slangy Uzbek message ("qalesan", "ишлар калай")
+            # is often not recognised as Uzbek, and answering it in Uzbek is exactly right
+            their_words = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)*", them.lower())
+            clearly_other = their_lang in ("ru", "en") and len(their_words) >= 3 \
+                and not any(lang._dictionary_uzbek(w) or w in lang.UZ_WORDS for w in their_words)
+            if clearly_other:
+                return f"wrong language (uz instead of {their_lang})"
+        latin = re.findall(r"[A-Za-z]{3,}", text)
+        a_name = bool(latin) and all(w[0].isupper() for w in latin) and len(text.split()) <= 6  # "Call of Duty Mobile"
+        if draft_lang == "en" and their_lang == "ru" and their_cyrillic and not re.search("[а-яё]", text, re.I) and not a_name:
             return "wrong language (en instead of ru)"  # a Russian reply with a game or app name in it is fine
     odd = foreign_word(them, text)
     if odd:
@@ -365,7 +373,7 @@ PLAN_RE = re.compile(
     r"\b(wanna|coming|come\s+(over|to)|meet|bring|let'?s)\b|kelasan\w*|borasan\w*|chiqasan\w*|uchrash\w*|olib\s+kel|"
     r"\b\w{3,}(asanmi|asizmi|asilami|asila|aymi|amizmi|olasanmi)\b|\bborib\s+kel|\bkelib\s+ket|\b(bor|kel|ol|ber|ayt)(ing|gin)?\b", re.I)
 COMMIT_RE = re.compile(
-    r"\b(уберу|покажу|помою|вынесу|перезвоню|напишу|напомню|sending|on\s+it|will\s+do)\b|\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|переночую|куплю|"
+    r"\b(уберу|покажу|помою|вынесу|перезвоню|наберу|напишу|напомню|sending|on\s+it|will\s+do)\b|\b(приду|буду|выйду|зайду|подойду|приеду|принесу|отдам|помогу|скину|сделаю|договорились|переночую|куплю|"
     r"позвоню|заберу|схожу|съезжу|отнесу|верну|оплачу|закажу|поеду|пойду|"
     r"го|погнали|заходи|выхожу|иду|еду)\b|\bв\s+\d{1,2}([:.]\d\d)?\b|\bчерез\s+(час|пол\w*|минут\w*|\d+)|\bжду\b|\b(sure|ok|okay|yeah),?\s+(do|i'?ll|will|done)\b|\b(давай|ок|окей|хорошо|да|конечно)\b[\s,]+\b(приду|буду|зайду|го|давай|помогу)\b|"
     r"\b(i'?ll\s+(come|be|bring|help)|coming|on\s+my\s+way|let'?s\s+go|sure\s+let'?s|yeah\s+let'?s|im\s+down)\b|"
@@ -377,8 +385,9 @@ DID_RE = re.compile(
 # yes/no questions about you right now that only you can answer: "ты выпил таблетки?", "папа дома?", "температура есть?"
 STATE_Q_RE = re.compile(
     r"\bты\b[^?]*\b\w{2,}(ил|ал|ел|ял|ул|ыл|ёл)(а|и)?(ся|сь)?\b[^?]*\?|\b\w{2,}(ил|ал|ел|ял|ул|ыл)(а|и)?(ся|сь)?\s*\?"
-    r"|\b(есть|дома|там|рядом|свободен|свободна|занят|занята|идешь|идёшь|едешь|готов|готова)\s*\?"
-    r"|\b\w{3,}(mi|misan|misiz)\s*\?", re.I)
+    r"|\b(температура|деньги|время|еда|зарядка|ключи)\s+есть\s*\?|\bесть\s+(температура|деньги|время)\s*\?"
+    r"|\b(дома|там|рядом|свободен|свободна|занят|занята|идешь|идёшь|едешь|готов|готова)\s*\?"
+    r"|\b\w{3,}(mi|misan|misiz|ми|мисан|мисиз)\s*\?", re.I)
 CLAIM_RE = re.compile(r"^\W*(да|нет|нету|есть|не|неа|ага|угу|ещё\s+нет|еще\s+нет|пока\s+нет|уже|yes|yeah|yep|no|nope|nah|not\s+yet|"
                       r"ha|haa|yo['ʻ‘’]?q|yoq|xa|ха|йўқ|йук|ҳа|hali\s+yo['ʻ‘’]?q|"
                       r"\w{2,}(dim|madim|ganman|maganman))\b", re.I)
@@ -435,6 +444,9 @@ RELAY_RE = re.compile(r"передай\w*|скажи\s+(ему|ей|им|мам�
 RELAY_OK_RE = re.compile(r"передам|скажу|aytaman|aytib\s+qo|i'?ll\s+tell|will\s+tell|xop\b", re.I)
 
 
+CRUDE_RE = re.compile(r"\b(сос[аи]\w*|[её]б\w*|дроч\w*|трах\w*|suck\w*|fuck\w*)\b", re.I)  # crude banter is not a question about your day
+
+
 # "Отправил", "Готово, поставил": a chat reply can't have DONE anything — only an order that really ran may say so
 DONE_RE = re.compile(r"^\W*(?:(?:ок(?:ей)?|хорошо|да|ладно|понял|ok(?:ay)?|yes|sure)[\s,.!]+)?(?:уже\s+)?(?:отправил|отправлено|"
                      r"скинул|переслал|поставил|удалил|сохранил|написал\s+(?:ему|ей|им)|сделал|готово|сделано|добавил|зашёл|зашел|"
@@ -453,7 +465,7 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
         return None  # "tell your dad…" → "ok, I'll tell him" is fine
     if PLAN_RE.search(them) and (COMMIT_RE.search(text) or AFFIRM_RE.match(text)):
         return "commitment"
-    if (DID_RE.search(them) or STATE_Q_RE.search(them)) and not known_today:
+    if (DID_RE.search(them) or STATE_Q_RE.search(them)) and not known_today and not CRUDE_RE.search(them):
         # "yes"/"no", or the question's own word handed back as the answer ("ты сделал?" — "сделал", "дома?" — "дома")
         first = re.match(r"\W*([^\W\d_]+)", text)
         asked = set(re.findall(r"[^\W\d_]{3,}", them.lower())) - {"ты", "вы", "это", "что", "как", "the", "you"}

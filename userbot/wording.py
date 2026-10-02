@@ -84,7 +84,11 @@ IDENTITY_HINT = ("\nPart of their message is about who or what you are (a bot, a
                  "that you won't answer. Reply only to the rest of what they wrote.\n")
 
 
-REALLY_RE = re.compile(r"\b(точно|правда|реально|really|actually|rostdan)\b|\bэто\b|\bis\s+(this|that|it)\b", re.I)
+REALLY_RE = re.compile(r"\b(точно|правда|реально|really|actually|rostdan)\b", re.I)
+# pressing on after an ignored "are you a bot?": still the same question, still not answered
+PRESSING_RE = re.compile(r"^\W*(ну\W*)?(ответь(\s+честно|\s+нормально)?|отвечай|честно|докажи\w*|колись|признай\w*|скажи(\s+честно|\s+правду)?|"
+                         r"а?\s*кто\s+(пишет|отвечает|печатает|это\s+пишет)|fr(\s+tho)?|for\s+real|be\s+honest|answer(\s+me)?|prove\s+it|"
+                         r"who('?s|\s+is)\s+(typing|writing|answering|this)|rostini\s+ayt|ayt)\W*$", re.I)
 
 
 identity_ignored: dict[int, int] = {}   # chat_id -> newest message id of an identity question that was ignored
@@ -102,6 +106,10 @@ def is_identity_question(sentence: str, about_media: bool = False) -> bool:
 def identity_question(history, after_id: int = 0) -> str | None:
     """-> 'only' (nothing else was said), 'mixed' (there is also something to answer) or None.
     after_id: messages up to this id were already ignored for it — they don't colour what comes later."""
+    newest = next((m for m in history if not m.out), None)
+    if after_id and newest is not None and getattr(newest, "id", 0) > after_id and PRESSING_RE.match(newest.raw_text or "") \
+            and not any(m.out for m in itertools.takewhile(lambda m: getattr(m, "id", 0) > after_id, history)):
+        return "only"  # the question was just ignored and they insist ("ответь честно", "докажи"): ignored again
     found, rest_words = False, 0
     about_media = any(getattr(m, "photo", None) or getattr(m, "video", None) or getattr(m, "gif", None) for m in history[:6])
     for msg in itertools.takewhile(lambda m: not m.out and getattr(m, "id", 0) > after_id, history):

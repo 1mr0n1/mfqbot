@@ -43,6 +43,31 @@ def grounded(note: str, their_text: str) -> bool:
     return bool(words) and sum(w in said for w in words) >= max(1, len(words) // 2)
 
 
+MONTHS = "january february march april may june july august september october november december".split()
+AGE_Q_RE = re.compile(r"сколько\s+(тебе|вам)\s+лет|тебе\s+сколько(\s+лет)?|how\s+old\s+(are|r)\s+(you|u)|ur\s+age|your\s+age|"
+                      r"yoshing\s+nech|nech[ai]\s+yosh|ёшинг\s+неч", re.I)
+
+
+def age() -> int | None:
+    """Your age today, from the birth date in facts.md ("3rd september 2010")."""
+    if not C.FACTS_PATH.exists():
+        return None
+    born = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+(" + "|".join(MONTHS) + r")\s+(\d{4})", C.FACTS_PATH.read_text(), re.I)
+    if not born:
+        return None
+    day, month, year = int(born.group(1)), MONTHS.index(born.group(2).lower()) + 1, int(born.group(3))
+    now = time.localtime()
+    return now.tm_year - year - ((now.tm_mon, now.tm_mday) < (month, day))
+
+
+def right_age(their_text: str, part: str) -> str:
+    """Asked how old you are, the number in the answer is your real age — whatever the model or an old chat says."""
+    years = age()
+    if years is None or not AGE_Q_RE.search(their_text) or not re.search(r"\b\d{1,2}\b", part):
+        return part
+    return re.sub(r"\b\d{1,2}\b", str(years), part, count=1)
+
+
 def facts_block(name: str) -> str:
     if not C.FACTS_PATH.exists():
         return ""
@@ -52,6 +77,8 @@ def facts_block(name: str) -> str:
     facts = "\n".join(lines)
     if not facts:
         return ""
+    if age() is not None:  # the age is worked out, not left to a model's arithmetic
+        facts += f"\nYour age today: {age()} (asked how old you are, the answer is {age()})."
     # "what do you have tomorrow?" — a model gets the weekday wrong, so the right timetable lines are spelled out
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     table = {d: m.group(1).strip() for d in days if (m := re.search(rf"(?im)^Timetable {d}:\s*(.+)$", facts))}

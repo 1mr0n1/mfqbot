@@ -16,7 +16,7 @@ from . import people, trace
 from . import app, lessons, lookup
 from .app import TELEGRAM_SERVICE_ID, asked, commander_ids, commanding, contacts, forced, full_name, hold_draft, http, label, log, names, our_ids, our_texts, owner_quiet_in, pacing_on, pending, push_history, rand, recent_incoming, revives, send_as_bot, sent_by_us, spam_until, spawn, state, to_chat_messages, type_like_a_person
 from .drafting import FORCE_LANG, contact_style_path, generate, persona, punct_profile, style_block, style_stats
-from .wording import IDENTITY_HINT, answer_each, clean_reply, identity_ignored, identity_question, looks_safe, split_reply, stale_parts
+from .wording import IDENTITY_HINT, PRESSING_RE, answer_each, clean_reply, identity_ignored, identity_question, is_identity_question, looks_safe, split_reply, stale_parts
 
 
 # formal Russian, the way a teacher or an official writes (family members have their own style files)
@@ -426,7 +426,9 @@ async def reply_flow(chat_id: int, contact: User):
             if identity == "mixed":
                 trace.emit("decision", who, "Their message also asks who/what is answering — ignoring that part")
                 hint += IDENTITY_HINT
-            several = [] if identity else quirks.questions_in(history)
+            several = [] if identity else quirks.questions_in(
+                history, after_id=max(identity_ignored.get(chat_id, 0), state.handled.get(str(chat_id), 0)),
+                skip=lambda t: is_identity_question(t) or bool(PRESSING_RE.match(t)))
             if several:  # more than one question: each gets its own answer, quoted
                 hint += quirks.MULTI_HINT.format(n=len(several), listing="\n".join(
                     f"{n}. {m.raw_text.strip()[:200]}" for n, m in enumerate(several, 1)))
@@ -606,6 +608,9 @@ async def reply_flow(chat_id: int, contact: User):
             parts = [p for p in parts if not re.search(r"готово|обновл|поставил|поменял|сменил|установил|done|changed|updated|set\b", p, re.I)]
             if not parts:
                 return
+
+        if from_model:
+            parts = [p if media.MEDIA_LINE_RE.match(p) else memory.right_age(their_text, p) for p in parts]
 
         # They asked for proof and something was found: the source goes along, as its own message.
         if from_model and researched and researched[2] and lookup.PROOF_RE.search(their_text) \
