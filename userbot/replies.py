@@ -465,6 +465,11 @@ async def reply_flow(chat_id: int, contact: User):
                                  else ln for ln in rest.splitlines())
                 reply = (greeting.reply + "\n" + rest).strip()
         if not reply:
+            # the model answered with nothing usable (often just an emoji, which is stripped): a 👍 says the same
+            if C.SMART_SKIP and from_model and "?" not in their_text and their_text.strip():
+                trace.emit("decision", who, "Nothing worth writing — a reaction instead")
+                await no_text_reply(chat_id, who, "react:👍", history)
+                return
             trace.emit("decision", who, "Nothing to send — staying quiet")
             return
         if not looks_safe(reply):

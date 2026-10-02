@@ -218,12 +218,12 @@ async def group_reply_flow(event, sender: User, force: bool = False, joining: bo
                                 "\nYour draft agreed to something or said yes/no about what you did, but you don't know "
                                 "that. Put it off in a few words without agreeing or confirming.\n")
             reply = again if again and not judge.overreach(text, again, memory.today_note()) \
-                else judge.dodge(over, lang.base(lang.detect(text)))
+                else judge.dodge(over, lang.base(lang.detect(name_re().sub(' ', text))))
         if reply and DEFER_RE.search(reply):  # in a group nobody waits for "ща гляну": answer now, or say you can't
             again = await write("\nDon't say that you'll look, check or send something in a moment. Either answer now "
                                 "or say in a few words that you don't know / can't.\n")
             reply = again if again and not DEFER_RE.search(again) and not judge.overreach(text, again, memory.today_note()) \
-                else judge.dodge("commitment", lang.base(lang.detect(text)))
+                else judge.dodge("commitment", lang.base(lang.detect(name_re().sub(" ", text))))
         if stale_parts(history, split_reply(reply)):
             again = await write("\nDon't repeat a line that is already in the conversation — not theirs, not yours.\n")
             reply = again if again and not stale_parts(history, split_reply(again)) else ""
