@@ -279,8 +279,10 @@ def stale_parts(history, parts: list[str]) -> list[str]:
     messages from the history and gets stuck on them) or just now by them (parroting)."""
     recent = [m.raw_text for m in history if m.raw_text][:C.REPEAT_LOOKBACK]
     said = {judge._norm(t) for t in recent} | {judge._norm(line) for t in recent for line in t.splitlines()}
+    mine = {judge._norm(m.raw_text) for m in history[:C.REPEAT_LOOKBACK] if m.out and m.raw_text}
     return [p for p in parts if not media.MEDIA_LINE_RE.match(p)
-            and len(judge._norm(p).split()) >= 2 and judge._norm(p) in said]
+            and len(judge._norm(p).split()) >= 2 and judge._norm(p) in said
+            and not (judge.NIGHT_RE.search(p) and judge._norm(p) not in mine)]  # "Xayrli tun" back to "Xayrli tun" is not parroting
 
 
 _LAT2CYR = dict(zip("abvgdezijklmnoprstufhcyq", "абвгдезийклмнопрстуфхцик")) | {"w": "в", "x": "кс"}

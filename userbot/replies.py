@@ -636,7 +636,7 @@ async def reply_flow(chat_id: int, contact: User):
             if not parts:
                 trace.emit("decision", who, "Nothing new to say — not sending the same line again")
                 daylog.record("skipped", who)
-                if "?" in their_text:  # a question left hanging is yours to know about
+                if quirks.ASKING_RE.search(their_text):  # a question left hanging is yours to know about
                     await app.client.send_message("me", f"🤷 {who} keeps asking and I have nothing new to say:\n"
                                                     f"“{their_text[:300]}”\nThat one is yours.")
                 return

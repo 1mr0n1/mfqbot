@@ -168,6 +168,8 @@ def detect(text: str) -> str | None:
                 and not any(w in RU_COMMON for w in words):
             return "uz"
         return "ru"
+    if any(re.search(r"[og]['ʻ‘’`][a-z]", w) for w in words):
+        return "uz"  # o', g' — no other language you write in has them
     uz = sum(w in UZ_WORDS or "o'" in w or "g'" in w or _dictionary_uzbek(w) for w in words)
     weak = sum(w in UZ_WEAK for w in words)
     try:
@@ -187,7 +189,8 @@ def detect(text: str) -> str | None:
     if scores[best] and (best in ("uz", "ru-latn", "en") or scores[best] >= 2 or len(words) < 3):
         return best
     if len(words) < 3:
-        if any(len(w) >= 6 and w.endswith(("misan", "misiz", "yapman", "yapsan", "dingmi", "asanmi", "dagi", "larni")) for w in words):
+        if any(len(w) >= 6 and w.endswith(("misan", "misiz", "yapman", "yapsan", "dingmi", "asanmi", "dagi", "larni", "ikni", "ingni",
+                                           "imni", "ngizni")) for w in words):
             return "uz"  # "Uydamisan", "kelyapsan": the ending gives it away
         return "en"  # nothing recognized and short: treat as English
     try:  # longer: English if most words are in the system dictionary or common chat English

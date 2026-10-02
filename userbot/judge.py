@@ -404,7 +404,7 @@ PLAN_RE = re.compile(
     r"приходи\w*|заходи\w*|отнеси\w*|верни\w*|оплати\w*|закажи\w*|во\s+сколько\s+(встрет|прид|буд|выйд|зайд|приед|увид)\w*|"
     r"\b(wanna|coming|come\s+(over|to)|meet|bring|let'?s)\b|kelasan\w*|borasan\w*|chiqasan\w*|uchrash\w*|olib\s+kel|"
     r"\b\w{3,}(asanmi|asizmi|asilami|asila|aymi|amizmi|olasanmi)\b|\bborib\s+kel|\bkelib\s+ket|\b(bor|kel|ol|ber|ayt)(ing|gin)?\b|"
-    r"\b(och|qil|yoz|yubor|tashla|chiq|yop|o['ʻ‘’]?chir|uxla)(ing|gin)?\b|верн[её]шь|вернуть|отдашь|отдать|верни\b", re.I)
+    r"\b(och|qil|yoz|yubor|tashla|chiq|yop|o['ʻ‘’]?chir)(ing|gin)?\b|верн[её]шь|вернуть|отдашь|отдать|верни\b", re.I)
 # a promise said flat, whatever they wrote: "скоро буду", "уже иду", "ща приду"
 FLAT_PROMISE_RE = re.compile(
     r"\b(скоро\s+буду|буду\s+через|ща[сз]?\s+(приду|буду|выйду|зайду|открою|принесу)|уже\s+(иду|еду|выхожу|бегу|открываю)|"

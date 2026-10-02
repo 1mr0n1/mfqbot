@@ -364,7 +364,8 @@ class LateAdditions(Cases):
                  ("не знаю ещё, потом скажу", "ru"), ("завтра контрольная по физике", "ru"), ("idk man", "en"),
                  ("lol man ur trash", "en"), ("norm a u tebya", "ru-latn"), ("нога болит после футбола", "ru"),
                  ("Яхши, рахмат", "uz"), ("Отанг уйдами?", "uz"), ("хорошо, рахмат тебе", "ru"), ("qalesan", "uz"),
-                 ("brew установил ?", "ru"), ("wifi работает?", "ru"), ("Go to windows", "en")]
+                 ("brew установил ?", "ru"), ("wifi работает?", "ru"), ("Go to windows", "en"),
+                 ("Kech bo'ldi uxla", "uz"), ("Eshikni och", "uz"), ("Uydamisan", "uz"), ("don't go", "en"), ("I'm good", "en")]
         if judge.in_uz_dictionary("kitob"):  # needs the dictionary: .venv/bin/python -m userbot.get_uz_dictionary
             cases += [("Bilmadim, qarayman", "uz"), ("Tel qilaman", "uz"), ("Xop, rahmat", "uz"), ("Мактабга бордингми", "uz"),
                       ("maktabga bordingmi", "uz"), ("Hozir dars qilmayapman", "uz"), ("телефон машина компьютер", "ru")]
