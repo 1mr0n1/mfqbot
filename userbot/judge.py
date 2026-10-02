@@ -90,6 +90,7 @@ def dry(history) -> bool:
     unanswered = list(itertools.takewhile(lambda m: not m.out, history))
     if not unanswered or len(unanswered) > 3:
         return False
+    worded = False
     for msg in unanswered:
         if msg.photo or msg.voice or msg.video or msg.video_note or (msg.document and not msg.sticker):
             return False
@@ -97,11 +98,12 @@ def dry(history) -> bool:
             continue
         text = (msg.raw_text or "").strip()
         kind = _closer_kind(text)
-        if "?" in text or kind in ("bye", "thanks"):
+        if "?" in text or kind in ("bye", "thanks") or GREETING_RE.match(text):
             return False
         if kind is None and len(re.findall(r"[^\W\d_]+", text)) > 2:
             return False
-    return True
+        worded = worded or kind != "emoji"
+    return worded  # a lone 👍, ❤ or sticker ends an exchange; it isn't an invitation to keep talking
 
 
 KEEP_GOING_HINT = (
@@ -347,13 +349,51 @@ CLAIM_RE = re.compile(r"^\W*(да|нет|не|неа|ага|угу|ещё\s+не
                       r"\w{2,}(dim|madim|ganman|maganman))\b", re.I)
 AFFIRM_RE = re.compile(r"^\W*(да|ага|угу|ок|окей|оке\w*|хорошо|конечно|давай|го|погнали|sure|yeah|yes|yep|ok|okay|bet|"
                        r"mayli|xop|ha)\b", re.I)
-UNSURE_RE = re.compile(r"не\s+знаю|не\s+помню|не\s+уверен|посмотр|может|хз|потом|позже|idk|not\s+sure|maybe|later|dunno|"
+UNSURE_RE = re.compile(r"don'?t\s+(know|remember)|не\s+знаю|не\s+помню|не\s+уверен|посмотр|может|хз|потом|позже|idk|not\s+sure|maybe|later|dunno|"
                        r"bilma|keyin", re.I)
 DODGE = {
     "commitment": {"ru": ["не знаю ещё", "посмотрим", "не знаю, напишу", "пока не знаю"], "en": ["idk yet", "not sure yet", "will lyk"],
                    "uz": ["bilmasam", "hali bilmayman", "keyin aytaman"]},
     "claim": {"ru": ["потом скажу", "потом расскажу"], "en": ["tell u later"], "uz": ["keyin aytaman"]},
+    "situation": {"ru": ["не знаю, ща гляну", "ща посмотрю", "пока не знаю"], "en": ["idk yet, lemme check", "not sure rn"],
+                  "uz": ["bilmadim, qarayman", "hali bilmayman"]},
 }
+
+
+# ---------- facts about your real life that nobody told the account ----------
+# Rule-based: a small model asked "is this made up?" answers "fine" to everything.
+SITUATION_RE = re.compile(
+    r"\b(ты|вы)\s+(где|куда)\b(?!\s+(жив|учи|работа|род|был|была|были))|\b(где|куда)\s+(ты|вы)\b(?!\s+(жив|учи|работа|род|был|была|были))"
+    r"|\b(где|куда)\s+(щас|сейчас)\b|^\W*(где|куда)\W*$"
+    r"|\bкогда\s+(ты\s+)?(прид[её]шь|приедешь|будешь|верн[её]шься|выйдешь|закончишь|освободишься)\b"
+    r"|\bкогда\s+(еда|курьер|доставка|заказ)\b|\bкогда\s+\w+\s+(приедет|привезут|принесут|придет|придёт)\b"
+    r"|\b(долго|скоро)\s+(ещ[её]|ты|будешь|там)\b|\bчерез\s+сколько\b"
+    r"|\b(что|чё|че|чо|сколько|как(ую|ой|ое|ие))\s+(ты\s+|тебе\s+|вам\s+)?(ел|ела|ели|кушал\w*|поел\w*|заказал\w*|купил\w*|взял\w*|"
+    r"получил\w*|поставили|задали)\b"
+    r"|\bс\s+кем\s+(ты|вы|гуля|сид|игра|ид|пойд)\w*|\bкто\s+(с\s+тобой|там|у\s+тебя)\b"
+    r"|\bwhere\s+(are|r)\s+(you|u)\b|\bwya\b|\bwhen\s+(will|are|r)\s+(you|u)\b|\bhow\s+long\b|\bwhat\s+did\s+(you|u)\s+(eat|get|order|buy)\b"
+    r"|\bwho('?s|\s+is|\s+are)?\s+(you\s+|u\s+)?(with|there)\b|\bwhat('?s|\s+is)\s+the\s+(hw|homework)\b"
+    r"|\bqayer\w*|\bqatta\w*|\bqachon\s+(kel|chiq|bor|qayt)\w*|\bkim\s+bilan\b|\bnima\s+(yeding|olding|berdi)\w*", re.I)
+# a draft that reports something only you could know: what you did, where you are, numbers, times
+REPORT_RE = re.compile(
+    r"\b(получил|купил|заказал|поел|съел|сдал|взял|выиграл|проиграл|принес|забрал|сходил|съездил)[аи]?\b"
+    r"|\bкурьер\w*|\bуже\s+(выхожу|иду|еду|дома|близко|тут|у)\b|\bчерез\s+(\d+|пару|минут\w*|час\w*|пол\w*)"
+    r"|\bi\s+(just\s+)?(got|bought|ordered|ate)\s+\w+|\bon\s+my\s+way\b|\bin\s+\d+\s*(min|h)", re.I)
+NOT_KNOWN_HINT = (
+    "\nYour previous draft stated things about your real life right now that you have no way of knowing here "
+    "(where you are, what you ordered or ate, when something arrives, who is with you, what you got…). Do NOT make "
+    "such things up. Answer like someone who hasn't checked yet: in a few words, in your usual style, say you don't "
+    "know yet or will look and tell them — or ask them back. No invented details.\n")
+
+
+def made_up(them: str, draft: str, known_today: str = "") -> bool:
+    """They asked about your situation right now and the draft answers with specifics nobody gave the account."""
+    text = draft.strip()
+    if known_today or not text or text.endswith("?") or UNSURE_RE.search(text):
+        return False
+    if SITUATION_RE.search(them):
+        return True
+    return "?" in them and bool(REPORT_RE.search(text))
 
 
 RELAY_RE = re.compile(r"передай\w*|скажи\s+(ему|ей|им|маме|папе|\w+е)\b|\bayt\b|aytib\s+qo|\btell\s+(him|her|them|your)\b", re.I)
@@ -361,7 +401,8 @@ RELAY_OK_RE = re.compile(r"передам|скажу|aytaman|aytib\s+qo|i'?ll\s+
 
 
 def overreach(them: str, draft: str, known_today: str = "") -> str | None:
-    """-> 'commitment' (agreeing to come/meet/bring/help) or 'claim' (yes/no about what you did) — or None."""
+    """-> 'commitment' (agreeing to come/meet/bring/help), 'claim' (yes/no about what you did) or 'situation'
+    (details about where you are / what you ordered / when you arrive that nobody gave the account) — or None."""
     text = draft.lower()
     if UNSURE_RE.search(text):
         return None  # already non-committal
@@ -371,6 +412,8 @@ def overreach(them: str, draft: str, known_today: str = "") -> str | None:
         return "commitment"
     if DID_RE.search(them) and CLAIM_RE.match(text) and not known_today:
         return "claim"
+    if C.GROUNDED and made_up(them, draft, known_today):
+        return "situation"
     return None
 
 

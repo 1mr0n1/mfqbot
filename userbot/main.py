@@ -37,7 +37,7 @@ from datetime import datetime, timedelta
 
 import httpx
 from telethon import TelegramClient, errors, events, functions
-from telethon.tl.types import ReactionEmoji, User
+from telethon.tl.types import InputDialogPeer, ReactionEmoji, User
 
 from . import config as C
 from . import daylog, judge, lang, media, memory, pfp, punct, quirks, recall, rhythm, salam, toggles, voice
@@ -67,6 +67,7 @@ me: User | None = None
 
 
 revives: dict[int, int] = {}            # chat_id -> how many times in a row you tried to restart a dying chat
+asked: dict[int, dict] = {}             # chat_id -> your question that is still waiting for an answer
 recent_incoming: dict[int, deque] = {}  # chat_id -> their latest messages, to notice a flood
 spam_until: dict[int, float] = {}       # chat_id -> no spamming back before this time
 
@@ -769,7 +770,9 @@ async def reply_flow(chat_id: int, contact: User):
                 trace.emit("warning", who, "Second draft was unusable too — staying quiet")
                 return
 
-        allow_media = C.MEDIA_ENABLED and not contact_style_path(contact)
+        # no sticker on top of a sticker, and none when the point is to get them talking
+        media_just_sent = any(m.out and (getattr(m, "sticker", None) or getattr(m, "gif", None)) for m in history[:4])
+        allow_media = C.MEDIA_ENABLED and not contact_style_path(contact) and not keep_going and not media_just_sent
         parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
         formal = quirks.is_formal(history)
         fixed = greeting.reply if greeting.reply else None  # the fixed salam line is never rewritten
@@ -781,7 +784,7 @@ async def reply_flow(chat_id: int, contact: User):
                 trace.emit("decision", who, f"Draft made a {over} I can't back up (“{said[:60]}”) — rewriting")
                 again = clean_reply(await generate(history, contact, hint + (
                     "\nYour draft agreed to a plan or promised something. You don't know yet whether you can — say so, "
-                    "briefly, without agreeing.\n" if over == "commitment" else
+                    "briefly, without agreeing.\n" if over == "commitment" else judge.NOT_KNOWN_HINT if over == "situation" else
                     "\nYour draft said yes or no about something you did today, but you don't know that. Don't answer "
                     "yes or no — put it off briefly.\n")) or "")
                 again_parts = [p for p in split_reply(again) if allow_media or not media.MEDIA_LINE_RE.match(p)]
@@ -791,6 +794,10 @@ async def reply_flow(chat_id: int, contact: User):
                 else:
                     neutral = judge.dodge(over, lang.base(lang.detect(their_text)))
                     reply, parts = neutral, ([fixed] if fixed else []) + [neutral]
+                if over == "situation":  # only you know the answer: tell you, and how to tell the account
+                    spawn(client.send_message("me", f"❓ {who} asked something only you know:\n“{their_text[:300]}”\n"
+                                                    f"I answered: “{' / '.join(parts)[:200]}”. If it matters, answer "
+                                                    "them yourself — or tell me with  .ai today <what's going on>."))
             parts = [p if media.MEDIA_LINE_RE.match(p) or p == fixed else quirks.fix_greeting(p, their_text, formal) if i == 0 else p
                      for i, p in enumerate(parts)]
             # Saying the exact same thing as a moment ago is what bots do: ask for a different wording once.
@@ -958,6 +965,12 @@ async def reply_flow(chat_id: int, contact: User):
             sent_count += 1
             trace.emit("sent", who, part, draft_id=draft_id, index=i)
         trace.emit("decision", who, f"Done — {sent_count} message(s) sent", draft_id=draft_id, final=True)
+        question = next((p for p in reversed(parts) if not media.MEDIA_LINE_RE.match(p) and p.rstrip().endswith("?")), None)
+        if question and sent_count and from_model and not formal and sent is not None:
+            asked[chat_id] = {"msg_id": sent.id, "text": question, "at": time.time(), "nudges": 0, "who": who,
+                              "due": rand(C.NUDGE_AFTER_READ), "read_at": None}
+        else:
+            asked.pop(chat_id, None)
         rhythm.replied(chat_id)
         rhythm.online_for_a_bit(client)
         if sent_count:
@@ -1282,6 +1295,7 @@ async def on_outgoing(event):
         texts.remove(event.raw_text)
         return
     state.clear_handoff(event.chat_id)  # you answered there yourself; normal rules apply again
+    asked.pop(event.chat_id, None)
     if event.is_private:
         spawn(push_history(event.chat_id))
     if event.chat_id in pending:
@@ -1345,6 +1359,7 @@ async def on_incoming(event):
     if not isinstance(sender, User) or sender.bot or sender.is_self or sender.id == TELEGRAM_SERVICE_ID:
         return
     who = names[event.chat_id] = full_name(sender)
+    asked.pop(event.chat_id, None)  # they answered (or at least wrote): nothing to ask again
     trace.emit("incoming", who, describe(event.message)[:300])
     spawn(push_history(event.chat_id))
     if not state.is_active(event.chat_id, C.REPLY_MODE):
@@ -1414,7 +1429,8 @@ async def group_reply_flow(event, sender: User):
             return
         reply = clean_reply(resp.json()["reply"])
         parts = [p for p in split_reply(reply) if not media.MEDIA_LINE_RE.match(p)]
-        reply = "\n".join(parts[:2])
+        habits = punct_profile(sender)  # no textbook full stops in a group either
+        reply = "\n".join(p for p in (punct.apply(p, habits) for p in parts[:2]) if p)
         if not reply or not looks_safe(reply) or (C.REVIEW and await judge.review(http, text, reply)):
             trace.emit("warning", who, f"Draft for the group wasn't good enough — staying quiet: {reply[:120]}")
             return
@@ -1583,6 +1599,73 @@ async def command_loop():
                                  for cid in known if cid in names), key=lambda c: c["name"].lower())})
 
 
+def nudge_due(entry: dict, now: float, read: bool) -> str:
+    """-> "nudge" | "wait" | "drop" for a question that is still unanswered."""
+    if now - entry["at"] > C.NUDGE_GIVE_UP or entry["nudges"] >= C.NUDGE_MAX:
+        return "drop"
+    if read:
+        entry["read_at"] = entry["read_at"] or now
+        return "nudge" if now - entry["read_at"] >= entry["due"] and now - entry["at"] >= entry["due"] else "wait"
+    return "nudge" if entry["nudges"] == 0 and now - entry["at"] >= entry.setdefault("unread_due", rand(C.NUDGE_AFTER_UNREAD)) else "wait"
+
+
+async def nudge(chat_id: int, entry: dict):
+    """Ask again, quoting your own unanswered message: first just "?", then the question in other words."""
+    who = entry["who"]
+    history = await client.get_messages(chat_id, limit=6)
+    if not history or not history[0].out or history[0].id != entry.get("last_id", entry["msg_id"]) \
+            or not sent_by_us(chat_id, history[0]):
+        asked.pop(chat_id, None)  # something happened in the chat since: it is not "ignored" any more
+        return
+    text = "?"
+    if entry["nudges"] >= 1:
+        try:
+            resp = await http.post("/complete", json={"messages": [{"role": "user", "content": (
+                "You texted a friend this question and got no answer:\n" + entry["text"] + "\n\nAsk the same thing "
+                "again in other words: one very short casual line, same language, no greeting, no emoji, no "
+                "complaining that they didn't answer. Output only the line.")}],
+                "models": C.MODELS, "max_tokens": 40, "temperature": 0.8})
+            again = clean_reply(resp.json()["reply"]).splitlines()[0].strip() if resp.is_success else ""
+        except Exception:
+            again = ""
+        if again and looks_safe(again) and len(again) <= 80 and judge._norm(again) != judge._norm(entry["text"]):
+            text = again
+        else:
+            text = "??"
+    trace.emit("decision", who, f"No answer to “{entry['text'][:60]}” — asking again: {text}")
+    if pacing_on():
+        await type_like_a_person(chat_id, text)
+    sent = await send_as_bot(chat_id, text, reply_to=entry["msg_id"])
+    trace.emit("sent", who, f"↩ {text}")
+    daylog.record("replied", who, text, them="(no answer to your question)")
+    entry.update(nudges=entry["nudges"] + 1, msg_id=entry["msg_id"], read_at=None, at=time.time(),
+                 due=rand(C.NUDGE_AFTER_READ) * 2)
+    entry["last_id"] = sent.id
+
+
+async def nudge_loop():
+    """Questions you asked that nobody answered: look at them now and then."""
+    while True:
+        await asyncio.sleep(20)
+        if not C.NUDGE_ON or state.is_paused() or rhythm.asleep() or state.approve:
+            continue
+        for chat_id, entry in list(asked.items()):
+            try:
+                if chat_id in pending or not state.is_active(chat_id, C.REPLY_MODE) or state.handed_off(chat_id) \
+                        or chat_id in state.manual:
+                    continue
+                peer = await client.get_input_entity(chat_id)
+                dialog = (await client(functions.messages.GetPeerDialogsRequest(peers=[InputDialogPeer(peer)]))).dialogs[0]
+                verdict = nudge_due(entry, time.time(), dialog.read_outbox_max_id >= entry.get("last_id", entry["msg_id"]))
+                if verdict == "drop":
+                    asked.pop(chat_id, None)
+                elif verdict == "nudge":
+                    await nudge(chat_id, entry)
+            except Exception:
+                log.exception("Nudge check failed for %s", chat_id)
+                asked.pop(chat_id, None)
+
+
 async def summary_loop():
     """Every evening: a digest of the day in Saved Messages."""
     if not C.SUMMARY_TIME:
@@ -1665,7 +1748,8 @@ async def main():
     trace.emit("system", "", f"Userbot started as {full_name(me)} — mode: {C.REPLY_MODE}, models: {', '.join(C.MODELS)}")
     await reply_to_unread()
     background = [asyncio.create_task(bio_loop(client, state)), asyncio.create_task(unread_loop()),
-                  asyncio.create_task(summary_loop()), asyncio.create_task(command_loop())]
+                  asyncio.create_task(summary_loop()), asyncio.create_task(command_loop()),
+                  asyncio.create_task(nudge_loop())]
     try:
         await client.run_until_disconnected()
     finally:

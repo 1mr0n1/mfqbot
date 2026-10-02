@@ -126,10 +126,19 @@ UNREAD_RESCAN_SECONDS = 45     # re-check the 30 most recent chats for unread DM
 
 REPEAT_LOOKBACK = 12           # a draft may not repeat a line from this many latest messages of the chat
 
+GROUNDED = True                # a draft that states things about your real life it cannot know is rewritten
+
 # Dry answers ("ок", "да", "норм") -> ask about their day / bring up a topic instead of letting the chat die
 KEEP_TALKING = True
 REVIVE_MAX = 2                 # tries in a row; if they stay dry after that, the chat is left alone
 REVIVE_WINDOW = int(os.environ.get("USERBOT_REVIVE_WINDOW", 30 * 60))  # only while the chat is live: your last message is at most this old
+
+# You asked something and got no answer -> ask again, as a reply to your own message
+NUDGE_ON = True
+NUDGE_AFTER_READ = (90, 300)       # they saw the question and stayed silent this long: "?"
+NUDGE_AFTER_UNREAD = (25 * 60, 45 * 60)  # they haven't even opened it: wait much longer
+NUDGE_MAX = 2                      # 1st time "?", 2nd time the question in other words; then let it go
+NUDGE_GIVE_UP = 3 * 3600           # a question older than this is forgotten
 
 # Someone floods the chat -> the same flood goes back at them
 SPAM_BACK = True
