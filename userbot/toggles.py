@@ -10,6 +10,7 @@ TOGGLES = {
     "pacing":   ("PACING",          "Human typing",         "Reading/thinking pause and a typing indicator; off = instant", "Timing"),
     "typos":    ("TYPOS_ON",        "Typos",                "Rarely sends a typo, then fixes it", "Style"),
     "media":    ("MEDIA_ENABLED",   "Stickers & GIFs",      "May send stickers, GIFs and your recorded clips", "Style"),
+    "spamback": ("SPAM_BACK",       "Spam back",            "5+ messages in a few seconds get the same flood sent back", "Style"),
     "react":    ("SMART_SKIP",      "Reactions",            "👍 / ❤ instead of text on closing messages; fillers get no reply", "Style"),
     "handoff":  ("HANDOFF",         "Hand-off",             "Requests for money, codes, emergencies, teachers → left to you", "Safety"),
     "emotional": ("HANDOFF_JUDGE",  "Hand-off: serious messages", "Also leaves to you someone in real distress or with bad news", "Safety"),

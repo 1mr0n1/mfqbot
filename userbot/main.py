@@ -24,7 +24,7 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai notes / .ai forgetnotes — in a private chat: show / erase what is remembered about that person
 """
 import asyncio
-from collections import Counter
+from collections import Counter, deque
 import base64
 import itertools
 import json
@@ -63,6 +63,10 @@ background_tasks: set[asyncio.Task] = set()
 forced: set[int] = set()                # chats where you clicked "Answer now": skip hand-off / ignore / skip rules once
 contacts: dict[int, User] = {}          # chat_id -> the person, for dashboard actions
 me: User | None = None
+
+
+recent_incoming: dict[int, deque] = {}  # chat_id -> their latest messages, to notice a flood
+spam_until: dict[int, float] = {}       # chat_id -> no spamming back before this time
 
 
 def rand(bounds: tuple[float, float]) -> float:
@@ -1166,6 +1170,53 @@ async def on_outgoing(event):
         cancel(event.chat_id)
 
 
+def flood_from(chat_id: int, msg) -> list:
+    """Their messages of the last few seconds, if there are enough of them to call it spam."""
+    burst = recent_incoming.setdefault(chat_id, deque(maxlen=C.SPAM_MAX))
+    burst.append(msg)
+    now = time.time()
+    if not C.SPAM_BACK or state.approve or now < spam_until.get(chat_id, 0):
+        return []
+    fresh = [m for m in burst if now - m.date.timestamp() <= C.SPAM_WINDOW]
+    return fresh if len(fresh) >= C.SPAM_TRIGGER else []
+
+
+def echo_of(msg):
+    """What goes back for one of their messages: the same sticker, the same short text, or a "?"."""
+    if msg.sticker:
+        return msg
+    text = (msg.raw_text or "").strip()
+    return text if text and len(text) <= C.SPAM_ECHO_CHARS and looks_safe(text) else "?"
+
+
+async def spam(chat_id: int, who: str, items: list) -> int:
+    """Send texts / stickers one right after another, without the usual reading and typing."""
+    sent = 0
+    spam_until[chat_id] = time.time() + C.SPAM_COOLDOWN
+    try:
+        await client.send_read_acknowledge(chat_id)
+        for item in items[:C.SPAM_MAX]:
+            our_texts.setdefault(chat_id, []).append(item if isinstance(item, str) else "")
+            msg = (await client.send_message(chat_id, item) if isinstance(item, str)
+                   else await client.send_file(chat_id, item.media))
+            our_ids.add(msg.id)
+            state.record_sent(chat_id, msg.id)
+            sent += 1
+            await asyncio.sleep(rand(C.SPAM_GAP))
+    except errors.FloodWaitError as e:
+        trace.emit("warning", who, f"Telegram asked to slow down for {e.seconds}s — stopped after {sent} message(s)")
+    except Exception:
+        log.exception("Spam to %s failed", who)
+        trace.emit("warning", who, f"Could not finish — stopped after {sent} message(s)")
+    finally:
+        spam_until[chat_id] = time.time() + C.SPAM_COOLDOWN
+    if sent:
+        state.mark_handled(chat_id, (await client.get_messages(chat_id, limit=1))[0].id)
+        trace.emit("sent", who, f"[{sent} messages in a row]")
+        spawn(push_history(chat_id))
+    return sent
+
+
 @client.on(events.NewMessage(incoming=True))
 async def on_incoming(event):
     if not event.is_private or time.time() - event.date.timestamp() > C.IGNORE_OLDER_THAN:
@@ -1187,6 +1238,14 @@ async def on_incoming(event):
         trace.emit("decision", who, "Still leaving this chat to you (handed off earlier)")
         return
     contacts[event.chat_id] = sender
+    flood = flood_from(event.chat_id, event.message)
+    if flood and event.chat_id not in state.manual:
+        cancel(event.chat_id)
+        recent_incoming.pop(event.chat_id, None)
+        trace.emit("decision", who, f"{len(flood)} messages in a few seconds — spamming back")
+        daylog.record("replied", who, f"[spammed back, {len(flood)} messages]", them=describe(event.message)[:100])
+        spawn(spam(event.chat_id, who, [echo_of(m) for m in flood]))
+        return
     cancel(event.chat_id)  # a new message restarts the wait, so bursts get one reply
     pending[event.chat_id] = asyncio.create_task(reply_flow(event.chat_id, sender))
 
@@ -1352,6 +1411,11 @@ async def run_command(cmd: dict):
         cancel(chat_id)
         trace.emit("decision", name, "You asked for an answer — writing one now")
         pending[chat_id] = asyncio.create_task(reply_flow(chat_id, contact))
+    elif kind == "spam" and cmd.get("text", "").strip():  # value = how many times
+        count = min(int(cmd.get("value") or 10), C.SPAM_MAX)
+        cancel(chat_id)
+        trace.emit("decision", name, f"Spamming on your order: “{cmd['text'].strip()}” × {count}")
+        await spam(chat_id, name, [cmd["text"].strip()] * count)
     elif kind == "say" and cmd.get("text", "").strip():  # your own words, sent with normal typing
         text = cmd["text"].strip()
         cancel(chat_id)

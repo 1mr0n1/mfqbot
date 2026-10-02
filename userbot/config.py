@@ -123,4 +123,13 @@ UNREAD_SCAN_DIALOGS = 150      # how many recent chats to scan for unread DMs
 RECENT_UNANSWERED = 10 * 3600  # read-but-unanswered messages this recent still get an answer — opening a chat
                                # yourself must not cancel the reply (covers a whole night of sleep)
 UNREAD_RESCAN_SECONDS = 45     # re-check the 30 most recent chats for unread DMs this often
+
+# Someone floods the chat -> the same flood goes back at them
+SPAM_BACK = True
+SPAM_TRIGGER = 5               # this many messages from one person...
+SPAM_WINDOW = 12               # ...within this many seconds counts as spam
+SPAM_MAX = 15                  # never more than this many messages in one go
+SPAM_GAP = (0.35, 0.9)         # seconds between them (faster gets the account rate-limited by Telegram)
+SPAM_COOLDOWN = 90             # after spamming back, answer normally for this long
+SPAM_ECHO_CHARS = 40           # their short messages are sent back as they are; longer ones become "?"
 IGNORE_OLDER_THAN = 300        # ignore messages older than this (e.g. backlog after restart)
