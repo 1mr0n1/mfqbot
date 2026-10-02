@@ -14,7 +14,7 @@ from . import config as C
 from . import daylog, judge, lang, media, memory, pfp, punct, quirks, rhythm, salam, voice
 from . import people, trace
 from . import app, lessons, lookup
-from .app import TELEGRAM_SERVICE_ID, asked, commander_ids, commanding, contacts, forced, full_name, hold_draft, http, label, log, names, our_ids, our_texts, owner_quiet_in, pacing_on, pending, push_history, rand, recent_incoming, revives, send_as_bot, sent_by_us, spam_until, spawn, state, to_chat_messages, type_like_a_person
+from .app import TELEGRAM_SERVICE_ID, asked, commander_ids, commanding, contacts, forced, full_name, hold_draft, http, label, log, names, our_ids, our_texts, owner_quiet_in, pacing_on, pending, rand, recent_incoming, revives, send_as_bot, sent_by_us, spam_until, spawn, state, to_chat_messages, type_like_a_person
 from .drafting import FORCE_LANG, contact_style_path, generate, persona, punct_profile, style_block, style_stats
 from .wording import IDENTITY_HINT, PRESSING_RE, answer_each, clean_reply, identity_ignored, identity_question, is_identity_question, looks_safe, split_reply, stale_parts
 
@@ -776,7 +776,6 @@ async def reply_flow(chat_id: int, contact: User):
         log.exception("%s: reply failed", who)
         trace.emit("warning", who, "Reply failed with an error (see userbot log)", draft_id=draft_id, final=True)
     finally:
-        spawn(push_history(chat_id))
         if history and not failed:  # answered, reacted, skipped or handed to you: don't pick it up again
             state.mark_handled(chat_id, history[0].id)
         if pending.get(chat_id) is asyncio.current_task():
@@ -827,7 +826,6 @@ async def spam(chat_id: int, who: str, items: list) -> int:
     if sent:
         state.mark_handled(chat_id, (await app.client.get_messages(chat_id, limit=1))[0].id)
         trace.emit("sent", who, f"[{sent} messages in a row]")
-        spawn(push_history(chat_id))
     return sent
 
 

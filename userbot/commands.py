@@ -11,7 +11,7 @@ from . import config as C
 from . import daylog, media, memory, pfp, rhythm, salam, toggles
 from . import people, pilot, trace
 from . import app, lessons
-from .app import COMMAND_RE, cancel, commander_ids, commanding, contacts, forced, full_name, group_done, group_names, http, log, names, our_ids, our_texts, pending, pilot_busy, push_history, resolve_name, send_as_bot, set_chat_mode, spawn, state, type_like_a_person
+from .app import COMMAND_RE, cancel, commander_ids, commanding, contacts, forced, full_name, group_done, group_names, http, log, names, our_ids, our_texts, pending, pilot_busy, resolve_name, send_as_bot, set_chat_mode, spawn, state, type_like_a_person
 from .groups import answer_in_group, cancel_group
 from .replies import reply_flow, reply_to_unread, spam
 from .wording import typed_by_bot
@@ -536,8 +536,6 @@ async def run_command(cmd: dict):
         spawn(operate(cmd["text"].strip()))
     elif chat_id is None:
         trace.emit("warning", name, "Dashboard action ignored — I don't know that chat yet")
-    elif kind == "history":
-        await push_history(chat_id)
     elif kind == "mode":
         mode = cmd.get("value")
         if mode == "off":

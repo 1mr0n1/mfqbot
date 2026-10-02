@@ -36,7 +36,7 @@ from . import daylog, rhythm, toggles
 from . import pilot, trace
 from .autoprofile import bio_loop
 from . import app
-from .app import TELEGRAM_SERVICE_ID, asked, cancel, commander_ids, contacts, describe, forced, full_name, group_done, group_seen, http, label, log, names, our_texts, pending, push_history, recent_incoming, resolve_name, spawn, state
+from .app import TELEGRAM_SERVICE_ID, asked, cancel, commander_ids, contacts, describe, forced, full_name, group_done, group_seen, http, label, log, names, our_texts, pending, recent_incoming, resolve_name, spawn, state
 from .commands import clip_by_name, command_loop, gather_order, obey, order_queue, own_photo_to_avatar, pin_commanders, save_clip_from_owner, teach
 from .groups import addressed_to_me, answer_in_group, consider_joining, group_ready, mention_allowed, scan_groups
 from .replies import echo_of, flood_from, initiative_loop, nudge_loop, reply_flow, reply_to_unread, spam
@@ -56,8 +56,6 @@ async def on_outgoing(event):
         return
     state.clear_handoff(event.chat_id)  # you answered there yourself; normal rules apply again
     asked.pop(event.chat_id, None)
-    if event.is_private:
-        spawn(push_history(event.chat_id))
     if event.chat_id in pending:
         log.info("%s: you replied yourself, standing down", label(event.chat_id))
         cancel(event.chat_id)
@@ -73,7 +71,6 @@ async def on_incoming(event):
     who = names[event.chat_id] = full_name(sender)
     asked.pop(event.chat_id, None)  # they answered (or at least wrote): nothing to ask again
     trace.emit("incoming", who, describe(event.message)[:300])
-    spawn(push_history(event.chat_id))
     if sender.id in commander_ids:
         if await teach(event) or await save_clip_from_owner(event) or await own_photo_to_avatar(event) \
                 or await clip_by_name(event, event.raw_text):

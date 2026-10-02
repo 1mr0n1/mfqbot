@@ -12,7 +12,8 @@ from types import SimpleNamespace as NS
 from telethon.tl.types import User
 
 from userbot import simulate as SIM  # noqa: F401  (points state, memory and the day log at a temp folder)
-from userbot import app, commands, config as C, groups, judge, lessons, lookup, people, pilot, quirks, replies, trace, wording
+from userbot import (app, commands, config as C, groups, judge, lang, lessons, lookup, memory, people, pilot, quick, quirks,
+                     replies, trace, wording)
 
 trace.emit = lambda *args, **kwargs: None  # nothing is written to the dashboard log from tests
 
@@ -201,6 +202,90 @@ class Facts(Cases):
     def test_relatives(self):
         found = lambda t: bool(people.RELATIVE_RE.search(t))
         self.check(found, [("Дедушка", True), ("Это отец твоей матери", True), ("я твой дядя", True), ("привет", False), ("я Азиз из 9Б", False)])
+
+
+class LateAdditions(Cases):
+    def setUp(self):
+        app.me = User(id=1, first_name="Kamron", username="me_x")
+        wording._name_re = None
+
+    def test_orders_by_rule(self):
+        self.check(quick.plan, [
+            ("напиши Тимуру: буду в 6", [("send_message", {"chat": "Тимуру", "text": "буду в 6"})]),
+            ("напиши Тимуру привет", [("send_message", {"chat": "Тимуру", "text": "привет"})]),
+            ("напиши маме что я задержусь", [("send_message", {"chat": "маме", "text": "я задержусь"})]),
+            ("скажи маме что я её люблю", None),                      # needs rewording: the model's job
+            ("заблокируй Макса", [("block", {"user": "Макса"})]),
+            ("замуть класс на 8 часов", [("mute", {"chat": "класс", "hours": 8.0})]),
+            ("отправь голосовое смех в Друзья", [("send_voice", {"chat": "Друзья", "tag": "смех"})]),
+            ("перешли это Тимуру", [("forward_last", {"from_chat": "here", "to_chat": "Тимуру"})]),
+            ("удали старую аватарку", [("remove_avatar", {"which": "previous"})]),
+            ("Delete the pfp that was before", [("remove_avatar", {"which": "previous"})]),
+            ("удали аву", [("remove_avatar", {"which": "current"})]),
+            ("change my first name to Kam", [("set_profile", {"first_name": "Kam"})]),
+            ("напиши Тимуру привет и закрепи это", None),              # two orders: the model sorts out the sequence
+            ("что писала мама?", None), ("зайди в канал @durov", None), ("отправь стикер 😂 Азизу", None)])
+
+    def test_promise_to_come_back(self):
+        said = lambda t: bool(replies.DEFER_RE.search(t))
+        self.check(said, [("ок щас", True), ("ща скину", True), ("не знаю, ща гляну", True), ("lemme check", True),
+                          ("Bilmadim, qarayman", True), ("ок сейчас", True), ("сейчас в школе", False), ("потом скажу", False), ("ок", False)])
+
+    def test_insisting_is_still_ignored(self):
+        m = lambda i, t, out=False: SIM.make(t, out=out, id=i)
+        self.assertEqual(wording.identity_question([m(5, "ответь честно"), m(4, "ты бот?"), m(3, "привет", True)], 4), "only")
+        self.assertIsNone(wording.identity_question([m(6, "а что задали?"), m(5, "ты бот?"), m(3, "привет", True)], 5))
+        self.assertFalse(wording.is_identity_question("Привет, это Камрон?"))  # a stranger checking the number is not an accusation
+
+    def test_ignored_questions_are_not_answered_later(self):
+        m = lambda i, t, out=False: SIM.make(t, out=out, id=i)
+        history = [m(7, "ладно, как дела?"), m(6, "докажи"), m(5, "ты точно камрон?"), m(4, "ты бот?"), m(3, "привет", True)]
+        skip = lambda t: wording.is_identity_question(t) or bool(wording.PRESSING_RE.match(t))
+        self.assertEqual(quirks.questions_in(history, after_id=6, skip=skip), [])
+        two = [m(9, "а столица франции?"), m(8, "сколько будет 12*12?"), m(3, "привет", True)]
+        self.assertEqual([x.raw_text for x in quirks.questions_in(two)], ["сколько будет 12*12?", "а столица франции?"])
+
+    def test_claims(self):
+        self.check(lambda them, draft: judge.overreach(them, draft, ""), [
+            ("ещё раз", "Отправил", "claim"), ("поставь", "Готово, аватарка обновлена", "claim"), ("ок", "Окей, отправлю", None),
+            ("сосал?", "Нет", None), ("инста есть?", "Нет", None), ("Температура есть?", "Нет", "claim"),
+            ("Перезвони", "Щас наберу", "commitment"), ("Отанг уйдами?", "Йук, ишда", "claim")])
+
+    def test_age_comes_from_the_birth_date(self):
+        years = memory.age()
+        if years is None:
+            self.skipTest("no birth date in facts.md")
+        self.assertEqual(memory.right_age("сколько тебе лет", "14"), str(years))
+        self.assertEqual(memory.right_age("how old r u", "im 14 lol"), f"im {years} lol")
+        self.assertEqual(memory.right_age("сколько будет 7+7", "14"), "14")
+
+    def test_clip_names(self):
+        tag = lambda t: " ".join(commands.SAVE_CLIP_RE.match(t).group("tag").lower().split())
+        self.check(tag, [('Сохрани как "смех друга"', "смех друга"), ("сохрани это голосовое как смех", "смех"), ("запиши это как «ок бро»", "ок бро")])
+
+    def test_joining_in(self):
+        def allowed(*lines):  # (who, text, minutes ago), oldest first; the last line is the new message
+            C.JOIN_COLD_CHANCE = 0.0
+            groups.join_log.clear()
+            hist = [SIM.make(text, out=(who == "You"), date=NOW - timedelta(minutes=ago)) for who, text, ago in reversed(lines)]
+            return groups.may_join(-1, hist[0], hist[1:])
+        self.assertTrue(allowed(("You", "я дома", 2), ("Timur", "кто шарит в алгебре?", 0)))
+        self.assertTrue(allowed(("Timur", "ты за кого?", 2), ("You", "за реал", 1), ("Timur", "а почему не барса", 0)))
+        self.assertFalse(allowed(("You", "хорошо", 3), ("Teacher", "Здравствуйте, сдайте работы до пятницы", 0)))
+        self.assertFalse(allowed(("You", "ок", 2), ("Timur", "@aziz_x ты где?", 0)))
+        self.assertFalse(allowed(("Timur", "я пошел спать", 1), ("Aziz", "давай", 0)))
+        self.assertFalse(allowed(("Timur", "кто идет?", 3), ("You", "я иду", 1), ("You", "в 6", 1), ("Timur", "ок", 0)))
+
+    def test_language(self):
+        cases = [("привет как дела", "ru"), ("hello how are you", "en"), ("privet kak dela", "ru-latn"), ("idk yet lemme check", "en"),
+                 ("не знаю ещё, потом скажу", "ru"), ("завтра контрольная по физике", "ru")]
+        if judge.in_uz_dictionary("kitob"):  # needs the dictionary: .venv/bin/python -m userbot.get_uz_dictionary
+            cases += [("Bilmadim, qarayman", "uz"), ("Tel qilaman", "uz"), ("Xop, rahmat", "uz"), ("Мактабга бордингми", "uz")]
+        self.check(lang.detect, cases)
+
+    def test_relative_names_go_into_contacts_with_their_telegram_name(self):
+        self.assertTrue(people.RELATIVE_RE.search("Дедушка"))
+        self.assertEqual(people.RELATIVE_RE.search("Это отец твоей матери").group(0), "отец твоей матери")
 
 
 if __name__ == "__main__":

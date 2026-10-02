@@ -65,9 +65,3 @@ async def report_status(status: dict):
     except httpx.HTTPError:
         pass
 
-
-async def report_history(chat: str, messages: list[dict]):
-    try:
-        await _http.post("/admin/history", json={"chat": chat, "messages": messages})
-    except httpx.HTTPError:
-        pass

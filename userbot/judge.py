@@ -201,8 +201,6 @@ async def sensitive_reason(http: httpx.AsyncClient, name: str, history, keywords
 # The model is only asked one narrow thing — whether specific unfamiliar words are real.
 GREETING_RE = re.compile(r"^(привет\w*|здравствуй\w*|здаров\w*|доброе утро|добрый (день|вечер)|ку|хай|салам\w*|салом\w*|"
                          r"hi|hey|hello|yo|sup|salom|assalomu alaykum)\W*$", re.I)
-WORD_CHECK = ("For each word below say whether it is a real word in Russian, English or Uzbek — including slang, "
-              "informal spellings, names, brands and game or app names. Answer one per line as word=YES or word=NO.\n{words}")
 _english: set[str] | None = None
 _vocab: set[str] | None = None
 CHAT_ENGLISH = {

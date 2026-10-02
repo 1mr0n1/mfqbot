@@ -85,10 +85,6 @@ def rand(bounds: tuple[float, float]) -> float:
     return random.uniform(*bounds)
 
 
-def typing_time(text: str) -> float:
-    return min(max(len(text) / rand(C.TYPING_CHARS_PER_SEC), C.TYPING_LIMITS[0]), C.TYPING_LIMITS[1])
-
-
 def cancel(chat_id: int):
     task = pending.pop(chat_id, None)
     if task:
@@ -232,13 +228,3 @@ def set_chat_mode(chat_id: int, mode: str):
 
 pilot_busy = asyncio.Lock()
 
-
-async def push_history(chat_id: int):
-    """Send the dashboard the recent conversation with this person (for the dialog view)."""
-    try:
-        messages = await client.get_messages(chat_id, limit=C.DASHBOARD_HISTORY)
-        await trace.report_history(label(chat_id), [
-            {"id": m.id, "out": bool(m.out), "bot": bool(m.out and sent_by_us(chat_id, m)),
-             "text": describe(m) or "[message]", "ts": m.date.timestamp()} for m in reversed(messages)])
-    except Exception:
-        log.debug("Could not push history for %s", chat_id, exc_info=True)

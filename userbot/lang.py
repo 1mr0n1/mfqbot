@@ -1,7 +1,6 @@
 """Tiny language detector for the three languages the account chats in: Uzbek, Russian, English."""
 import re
 
-UZ_CYRILLIC = set("ўқғҳЎҚҒҲ")
 # Common Uzbek (Latin) chat words that aren't English or transliterated Russian words.
 UZ_WORDS = {
     "salom", "assalomu", "alaykum", "qalaysan", "qalaysiz", "qalay", "yaxshi", "yaxshimisan", "yaxshimisiz", "rahmat",

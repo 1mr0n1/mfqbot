@@ -116,10 +116,8 @@ HEDGE_AFTER = float(os.environ.get("USERBOT_HEDGE_AFTER", "2.5"))  # s before th
 DEBOUNCE = (0, 0)              # extra wait before reading (the draft hold below already absorbs message bursts)
 READ_DELAY = (0, 0)            # "picking up the phone" before the chat is marked read
 THINK_DELAY = (0, 0)           # pause between reading and writing
-DASHBOARD_HISTORY = 40         # messages per chat shown in the dashboard's dialog view
 APPROVE_TIMEOUT = 15 * 60      # in "approve before sending" mode an unapproved draft is dropped after this long
 MIN_HOLD = 1.0                 # a draft is always visible (and cancellable on /admin) at least this long
-DRAFT_HOLD = (2, 3)            # legacy fixed hold; real timing now comes from rhythm.reading/thinking_seconds
 TYPING_CHARS_PER_SEC = (5, 9)  # typing speed while the "typing…" indicator is shown
 TYPING_LIMITS = (1.5, 20)      # min/max typing time per message
 BETWEEN_MESSAGES = (0.8, 3)    # pause between split messages
@@ -130,7 +128,7 @@ RETRY_DELAY = (45, 90)         # wait between those attempts
 CONTEXT_MESSAGES = 30          # how much chat history the model sees
 if os.environ.get("USERBOT_HUMAN_PACING", "true").lower() not in ("1", "true", "yes"):
     # Instant mode: no draft hold and no typing simulation.
-    DRAFT_HOLD = TYPING_LIMITS = (0, 0)
+    TYPING_LIMITS = (0, 0)
     BETWEEN_MESSAGES = (0.3, 0.6)
 
 # After you type in a chat yourself, wait this long before the bot answers there again. 0 = never wait:

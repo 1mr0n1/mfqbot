@@ -1,229 +1,206 @@
-# Telegram AI chatbot
+# Telegram account that answers like you
+
+Three programs:
 
 ```
-Telegram user ──> bot/ (aiogram) ──HTTP──> backend/ (FastAPI) ──> OpenRouter  (Qwen)
-                                                                  └──> NVIDIA API (Nemotron)
+people on Telegram ──> userbot/  (your own account, Telethon) ──HTTP──┐
+Telegram bot users ──> bot/      (a normal bot, aiogram)      ──HTTP──┼──> backend/ (FastAPI) ──> model providers
+you, in a browser  ──> dashboard (backend/admin.html)         ──HTTP──┘
 ```
 
-The bot is only an interface: all LLM calls, chat history and per-user model choice live in the backend.
+- **backend/** — the only part that talks to language models (OpenRouter, NVIDIA, a local server). It also
+  relays between the dashboard and the userbot.
+- **userbot/** — logs in as *your* account and replies in private chats and groups the way you write.
+- **bot/** — a small ordinary chatbot (`/start`, `/model`, `/reset`, any text).
 
-## Run
+## Setup
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env   # fill in OPENROUTER_API_KEY, NVIDIA_API_KEY, TELEGRAM_BOT_TOKEN
-
-.venv/bin/python -m backend.main   # terminal 1
-.venv/bin/python -m bot.main       # terminal 2
+cp .env.example .env                    # API keys, bot token, Telegram api_id / api_hash (my.telegram.org)
+.venv/bin/python -m userbot.login       # once: phone, code, 2FA password
+sh scripts/services.sh install          # macOS: runs backend, userbot and bot as services, restarts them if they stop
 ```
 
-## Bot commands
-- `/start` — intro
-- `/model` — pick Qwen or Nemotron (inline buttons, ✅ marks the current one)
-- `/reset` — clear conversation history
-- any text — chat
+`sh scripts/services.sh status | restart | stop | start | logs`. Logs: `~/Library/Logs/mfqbot/`.
+By hand instead: `.venv/bin/python -m backend.main`, `-m userbot.main`, `-m bot.main`.
+On a server: see `deploy/README.md`.
 
-## Backend API
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/health` | liveness |
-| GET | `/models` | available models |
-| GET/PUT | `/users/{id}/model` | get / set user's model |
-| DELETE | `/users/{id}/history` | clear history |
-| POST | `/chat` | `{user_id, message}` → `{reply, model}` |
-| POST | `/complete` | stateless: `{messages, system?, models[]}` → `{reply, model}`, tries models in order |
+A laptop that sleeps stops answering; after more than a few minutes down, the account says so in Saved Messages
+when it is back.
 
-Interactive docs: http://127.0.0.1:8000/docs
+## Models
 
-## Userbot (replies from your own Telegram account)
+`backend/config.py` lists the models (`MODELS`) and providers (`PROVIDERS`); any OpenAI-compatible provider can be
+added. The userbot picks by purpose in `.env`:
 
-`userbot/` logs in as **your account** (Telethon) and replies in private chats like a human would:
-waits for the other person to finish typing, marks the chat read after a random delay, shows "typing…"
-for a time proportional to the reply length, and sometimes splits replies into several messages.
-Context is read from the real chat history, so your own manual messages are taken into account.
+| Setting | Used for |
+|---|---|
+| `USERBOT_MODELS` | replies and orders — the first answers, the second joins if the first is slow |
+| `USERBOT_PHOTO_MODELS` | messages with photos (models that can see) |
+| `USERBOT_JUDGE_MODELS` | small checks: who-is-this answers, follow-ups, note-taking |
+
+## How it replies
+
+Style comes from your own chats (see "Teaching it" below), never from a generic persona.
+
+- **Short, like you.** Your punctuation habits, almost no emoji, one thought per message: a reply with two
+  thoughts goes out as two messages; two versions of the same thought are sent once.
+- **Several questions** each get their own answer, sent as a reply to that question.
+- **Closing words get a reaction.** "ок", "спасибо", "пока" after your message get 👍 / ❤, not more text.
+- **A dry answer to your question** ("как дела?" — "норм") gets a follow-up question, twice at most.
+- **"Щас" means something follows.** After "ок щас" / "lemme check" it comes back within about a minute with
+  the answer, or a plain "couldn't find out".
+- **Facts are looked up.** A checkable claim or a dispute about the world is searched on the web before
+  answering; asked for proof, it sends the source.
+- **Voice messages** are transcribed locally (Whisper). One with no words in it gets a reaction.
+- **Photos** go to a model that can see them.
+- **Timing.** Reading and thinking time depend on the message; typing sometimes pauses or restarts. Night sleep,
+  school hours and an occasional slow reply are switches.
+- **Asking again.** A question of yours left unanswered gets a "?", then is asked once more in other words.
+- **Writing first.** Up to twice a day it opens a chat itself: to ask how something they mentioned went, or just
+  what's up — close friends only.
+
+### What it will not do
+
+- **Promise or claim things for you.** It does not agree to meet, lend, buy or come, does not say what you did,
+  ate or ordered, where you are, or that something "is done" — unless you told it (`.ai today <text>`).
+  Such drafts are rewritten into "не знаю ещё" and, for things only you know, you get a note.
+- **Say who or what is answering.** "Are you a bot?" is ignored — not confirmed, not denied — and so is insisting.
+- **Repeat itself**, parrot the other person, or send text that could act as one of your commands.
+- **Answer the serious things** (switchable): money, codes, emergencies, a formal message from a teacher. Those
+  are left unread and reported to you.
+
+### People
+
+Everyone it talks to gets a folder in `userbot/memory/people/`: who they are, what they told it about
+themselves, and things to ask about later. Tone follows closeness — family, close friend, acquaintance, stranger —
+counted from your history with them and adjustable on the dashboard.
+Someone unknown who writes for the first time is asked who they are, once; a valid answer saves them to your
+Telegram contacts and tells you.
+
+`userbot/facts.md` (copy `facts.example.md`) holds what is true about you: school, timetable, family, interests.
+The account answers from it and stays vague about everything else. Your age and today's / tomorrow's lessons are
+worked out from it rather than left to a model.
+
+### Groups
+
+Per group, on the dashboard: **Answers when called** (your name, your @username, or a reply to you),
+**Also joins in** (may write uncalled when it judges a member would — a few times an hour, never after a formal
+message), or **Ignored**. Each person who calls gets their own answer; someone calling over and over stops
+getting replies for a while.
+
+## Controlling it
+
+### Commands you type from the account (`.ai …`)
+
+The message is deleted; the answer goes to Saved Messages.
+
+| Command | Effect |
+|---|---|
+| `.ai on` / `off` / `manual` | in a chat: answer / ignore / never answer, only tell you |
+| `.ai pause [30m]` / `resume` / `status` / `awake 2h` | all auto-replies; stay up past the sleep window |
+| `.ai unread` | answer waiting private messages now |
+| `.ai today <text>` | tell it what is going on today (so it may say so) |
+| `.ai note <text>` / `notes` / `forgetnotes` | in a chat: notes about that person |
+| `.ai save <tag>` / `clips` / `forget <tag>` | reply to your voice or round video in Saved Messages: a clip it can send |
+| `.ai name …` / `surname …` / `bio …` / `photo` / `profile` / `pfp undo` | your profile |
+| `.ai fwd <who>` | reply to a message: forward it |
+| `.ai summary` / `.ai report [today]` | the evening digest / the morning report, now |
+| `.ai do <anything>` | an order in plain words — see below |
+
+### Orders in plain words
+
+`.ai do напиши Тимуру что буду в 6`, `.ai do mute the class group for 8 hours`, `.ai do что писала мама?` — or the
+box on the dashboard. About forty actions: messages (send, schedule, forward, edit, delete, react, pin, voice
+clips, pictures, polls), chats (read, search, mute, archive, join, leave, create), people (block, contacts),
+your profile and privacy, the web (search, open a page).
+
+- Common orders are understood by fixed rules (`userbot/quick.py`); the rest is planned by a model, one step at
+  a time. The report lists what actually ran.
+- Steps that can't be undone wait for `.ai do yes`.
+- After reading what other people wrote, it may only act in the chats the order is about — text in a chat can
+  never redirect it.
+- Not offered at all: deleting the account, sessions, password, phone number, the chat with login codes.
+- Web addresses on this machine or the local network are never opened.
+
+### Your other account (`USERBOT_COMMANDERS`)
+
+An account listed there — pinned by numeric id on first start — is you. What it writes to this account is an
+order when it opens with a command ("напиши…", "удали…", "поставь это на аву"), carried out without asking back;
+everything else is ordinary conversation. It can also teach:
+
+| It writes | Effect |
+|---|---|
+| `запомни: …`, `если … отвечай …`, `никогда не …` | a rule that goes into every reply |
+| `правила` / `забудь правило 3` | list / remove rules |
+| a voice message + `сохрани как смех` | a clip; later just `смех` sends it |
+| a photo + `на аву` | that photo becomes the profile photo |
+
+### Dashboard
+
+http://127.0.0.1:8000/admin while backend and userbot run.
+
+- **About to send** — every draft before it goes out: edit, Send now, Cancel. *Approve before sending* holds all
+  of them. A draft you correct is remembered as an example.
+- **Tell the account what to do** — the order box, with Yes / No.
+- **Settings** — every behaviour above as a switch; they apply at once and survive restarts.
+- **Chats, Groups, People** — mode per chat, Answer now, a box to send your own text; closeness per person.
+- **Decision log** — Messages (who wrote / what was sent), Everything (why), Problems.
+- If it cannot connect, it says which part is broken.
+
+From a phone: deploy `dashboard/` as a static site and reach the backend through a tunnel
+(`dashboard/README.md`). From outside, the backend serves only `/admin/*` and only with `ADMIN_TOKEN`; the
+dashboard can send messages from your account, so treat the token like a password.
+
+### Reports
+
+A morning report (`USERBOT_REPORT_TIME`) about yesterday — chats, replies, what was left to you, what it rewrote
+or caught, what the models cost — and an evening digest (`USERBOT_SUMMARY_TIME`), both in Saved Messages.
+
+## Teaching it your style
+
+From Telegram Desktop exports (Chat → ⋮ → Export chat history → HTML):
 
 ```bash
-# fill TELEGRAM_API_ID / TELEGRAM_API_HASH in .env (from https://my.telegram.org)
-.venv/bin/python -m userbot.login   # once, interactive: phone, code, 2FA password
-.venv/bin/python -m userbot.main    # needs the backend running
+.venv/bin/python -m userbot.import_export chat-histories "YourName"                       # general style
+.venv/bin/python -m userbot.import_contact "chat-histories/ChatExport_X" "YourName" their_username   # one person
+.venv/bin/python -m userbot.get_uz_dictionary                                              # Uzbek word list (optional)
 ```
 
-Control it by typing these from your account (the command is deleted, confirmation goes to Saved Messages):
+A person with a style file is answered only the way your real chat with them shows. Someone without a
+@username: use `_` + their name as it appears in your Telegram (`_папа`). Only your own messages are learned
+from; links, numbers and slurs are skipped. Everything lands in `userbot/style/` and is picked up without a restart.
 
-| Command | Where | Effect |
-|---|---|---|
-| `.ai on` / `.ai off` | a private chat | enable / disable auto-replies there |
-| `.ai pause` / `.ai resume` | anywhere | stop / restart all auto-replies |
-| `.ai pause 30m` (m/h/d) | anywhere | pause for a while, then resume automatically |
-| `.ai status` | anywhere | show state |
-| `.ai unread` | anywhere | answer unread private messages now (also done at startup) |
-| `.ai save <tag>` | Saved Messages, as a reply | add your voice / round video message to the clip library |
-| `.ai clips` / `.ai forget <tag>` | anywhere | list / remove clips |
-| `.ai savepack` | anywhere, as a reply to a sticker | add that sticker's whole pack to your account |
-| `.ai salam` / `.ai notsalam` | anywhere, as a reply to a sticker | teach that it is / isn't an "Assalomu alaykum" sticker |
-| `.ai name …` / `.ai surname …` / `.ai bio …` | Saved Messages | change your profile (`-` clears surname/bio) |
-| `.ai photo` | Saved Messages, as a reply to a photo | set it as your profile photo |
-| `.ai profile` | Saved Messages | show current name / surname / bio |
-| `.ai pfp undo` | anywhere | remove the newest profile photo (the previous one comes back) |
+## Private data
 
-Media: replies can include stickers (your favorites/recents first), GIFs (via @gif) and your own recorded
-voice / round video clips. The model never fakes voice or video — it can only send clips you recorded.
-Profile photo on request (`USERBOT_PFP_FROM_CHATS`): if someone sends a photo and explicitly asks you to use it
-as your profile picture, the account sets it — after a vision model clears the picture (fails closed), at
-most 3 times a day and 10 minutes apart; each change is reported in Saved Messages. Name, surname and bio
-are never changed from chats.
-Vision: photos the other person sends are passed to a model that can see them (`omni`, then `qwen`/`local`);
-text-only models get a `[photo]` placeholder. Unread DMs up to 24h old are answered at startup — private
-chats only, never groups, channels or bots.
-Auto-bio (`USERBOT_AUTO_BIO`): every 6–14h, never at night, the account rewrites its own bio in the learned
-style (no chat content is used, so nothing private leaks); each change is noted in Saved Messages.
-Name, surname and photo are only changed by you (`.ai …` commands or `python -m userbot.profile`).
-`USERBOT_REPLY_MODE=all` replies in every private chat (`.ai off` excludes one); `allowlist` only in chats
-enabled with `.ai on`. `USERBOT_HUMAN_PACING=false` replies instantly; `USERBOT_MEDIA=false` disables media.
+None of this is in git: `.env`, `userbot/account.session`, `userbot/state.json`, `userbot/facts.md`,
+`userbot/lessons.json`, `userbot/memory/`, `userbot/style/`, `userbot/clips.json`, the day log, `chat-histories/`.
+`sh scripts/backup.sh` makes an encrypted copy of all of it except the session (nightly once the services are
+installed; `backup.sh passphrase` shows the key — keep it somewhere else too).
 
-Safety behaviour: private chats only (no groups/channels/bots/Telegram service messages), answers whenever the other person writes (set
-`USERBOT_OWNER_WINDOW` to make it stay out for a while after you typed there yourself), drops its pending
-reply if you answer first,
-won't commit you to meetings/money/favors. Style is in `userbot/persona.md`, timing in `userbot/config.py`.
-Vision: photos the other person sends are passed to a model that can see them (`omni`, then `qwen`/`local`);
-text-only models get a `[photo]` placeholder. Unread DMs up to 24h old are answered at startup — private
-chats only, never groups, channels or bots.
-Auto-bio (`USERBOT_AUTO_BIO`): every 6–14h, never at night, the account rewrites its own bio in the learned
-style (no chat content is used, so nothing private leaks); each change is noted in Saved Messages.
-Name, surname and photo are only changed by you (`.ai …` commands or `python -m userbot.profile`).
-`USERBOT_REPLY_MODE=all` replies in every private chat instead of only enabled ones.
+⚠️ `account.session` is full access to your account: never share or commit it. Telegram may restrict accounts
+that look automated; keep volumes low.
 
-### What it knows, and when it stays out
-
-- **Facts about you** — copy `userbot/facts.example.md` to `userbot/facts.md` and fill it in (school, routine,
-  family, interests). The account answers from it and stays vague about anything not listed.
-- **Notes per person** — after a reply, lasting things the *other person* said (a move, a birthday, a request)
-  are saved under `userbot/memory/` and used in later chats. `.ai note <text>`, `.ai notes`, `.ai forgetnotes`
-  inside that person's chat. Notes are never taken from the bot's own messages.
-- **Not everything gets a reply** — an "ok" / "👍" / "спасибо" after your message is left alone or gets an emoji
-  reaction instead of text (`USERBOT_SMART_SKIP`).
-- **Identity questions are ignored** — "are you a bot?", "who are you?", "is this really you?" get no answer
-  (neither confirmed nor denied; any line claiming to be human is dropped). If the message also says
-  something else, only that part is answered.
-- **Hand-off** — money, verification codes/passwords, emergencies, or someone upset / wanting a serious talk are
-  not answered: the message stays unread, you get a 🚨 note in Saved Messages, and the account stays out of
-  that chat for 30 minutes or until you write there (`USERBOT_HANDOFF`).
-
-### More human touches
-
-- **Second look** — every model-written draft is checked (right language, no nonsense words, answers the
-  question). A rejected draft is rewritten once; if that fails too, nothing is sent and you get a 🤷 note.
-- **Daily rhythm** — asleep (`USERBOT_SLEEP`) nothing is read or answered and it catches up after waking;
-  during school hours (`USERBOT_BUSY`, weekdays) replies come 3–20 min late; otherwise ~15% of messages wait a
-  few minutes. An ongoing conversation is always answered right away. After acting, the account goes
-  "offline" again within a minute.
-- **Pacing that depends on the message** — before typing it "reads" what came in (by length; a voice message by
-  its duration; a few seconds per photo) and "thinks" (almost nothing for "ок", several seconds for a
-  calculation, an explanation or a decision); typing speed differs from message to message and sometimes
-  pauses mid-way. Faster when the conversation is already flowing.
-- **Voice messages** — voice and round-video messages are transcribed locally with Whisper (nothing leaves
-  the machine) and answered like text.
-- **Quoting and typos** — it swipe-replies to a specific message when several were sent or the message is old;
-  ~6% of casual messages go out with a typo that is then edited or fixed with a `*word`.
-- **Your punctuation** — commas stay, sentences are joined with a comma, no period at the end, "!" is rare;
-  rates are measured from your own messages (per person when they have a style file).
-- **Short like you** — a reply longer than about twice your usual long message is rewritten shorter and, if
-  needed, cut at a clause boundary; replies are generated at a low temperature (`USERBOT_TEMPERATURE`, 0.5)
-  to keep wording steady.
-- **Closing messages get a reaction** — "ok", "спасибо", "пока", "спокойной ночи"… after your message are
-  answered with 👍 or ❤ instead of more text.
-- **Almost no emoji** — emoji are stripped from replies (`USERBOT_EMOJI_CHANCE` keeps one, rarely); reactions
-  are only 👍 or ❤.
-- **Evening summary** — a digest in Saved Messages at `USERBOT_SUMMARY_TIME` (`.ai summary` for one now).
-- **Groups** — replies only when someone @mentions you or replies to your message, quoting it; `.ai off` in a
-  group switches that group off.
-- **Forwarding** — reply to any message with `.ai fwd <@username or name>` to forward it. Only you can trigger
-  a forward; the account never forwards other chats' messages on someone's request.
-
-### Testing without touching Telegram
-
-`userbot/simulate.py` runs scripted conversations through the real reply code with a fake Telegram client —
-nothing is sent to anyone. State, notes and the day log go to a temp folder; timing is off.
+## Tests
 
 ```bash
-# scripted situations (your own JSON: contacts + scenarios, see the docstring)
-.venv/bin/python -m userbot.simulate scenarios.json out.json
-# scenarios sampled from your chat exports, with your real reply kept as the reference
-.venv/bin/python -m userbot.sim_from_exports config.json real.json
-.venv/bin/python -m userbot.simulate real.json out.json
-# numbers to compare runs: flagged replies, wrong language, commitments, closeness to your real replies
-.venv/bin/python -m userbot.simscore before.json after.json
+.venv/bin/python -m unittest discover tests      # the rules: seconds, no model, no Telegram
 ```
 
-`SIM_RPM` paces model calls (free tiers throttle hard), `SIM_PARALLEL` sets concurrency, `USERBOT_MODELS=local`
-runs everything on a local model. Results are saved after every scenario. Exchanges used as test references are
-hidden from the bot's examples during the run.
+Conversations, orders, groups and the dashboard are tested against the real code with a fake Telegram — nothing
+is sent to anyone. See `tests/README.md`.
 
-How replies are grounded in your own chats: `recall.py` looks up what you answered when someone wrote almost
-the same thing before (only for messages with real content and a close match) and shows it to the model;
-`import_contact.py` / `import_export.py` build the per-person and general example sets.
+## Layout
 
-### Admin dashboard
-
-Open http://127.0.0.1:8000/admin while the backend and userbot run.
-
-- **Decision log** — who wrote, why the bot waits or stays quiet, which model answered, what was blocked.
-- **About to send** — every draft appears before it goes out. Edit the text (one message per line) and press
-  **Send now**, or **Cancel**. Starting to type freezes that draft until you decide.
-- **Approve before sending** — a switch: nothing is sent until you press Send now (unapproved drafts are
-  dropped after 15 minutes).
-- **Chats** — per chat: mode (**Auto** / **Manual** = never answer, only tell you / **Off**), **Answer now**
-  (make the bot reply where it stayed silent: left to you, ignored, no reply needed), and a box to send your
-  own text with normal typing.
-- **Settings** — switches for night sleep, school mode, slow replies, human typing, typos, stickers & GIFs,
-  reactions, hand-off, second look, photo vision, voice transcription, notes, group mentions, profile photo on
-  request and auto-bio. They apply immediately and are remembered across restarts (`userbot/toggles.py`).
-- **Pause / Resume** for everything.
-
-The layout adapts to phones and tablets. Events live in memory only.
-
-On the Mac itself the page needs no password. To use it from a phone or anywhere else, deploy the static copy in
-`dashboard/` (Vercel) and reach the backend through a tunnel — see `dashboard/README.md`. From outside, the
-backend serves only `/admin/*` and only with `ADMIN_TOKEN`; nothing else is reachable, and with no token set
-remote access is off. The dashboard can send messages from your account: treat the token like a password.
-
-### Teaching it your texting style
-
-Either from a Telegram Desktop export (Chat → ⋮ → Export chat history → HTML) or from a live account:
-
-```bash
-.venv/bin/python -m userbot.import_export chat-histories "YourName"   # folder of exports + your name as shown in them
-.venv/bin/python -m userbot.learn_style [session]                    # live account (userbot stopped)
-```
-
-Per-person style (built locally, no model call) — the userbot then talks to that username only the way
-your real chat with them shows, in one language at a time, without stickers/GIFs:
-
-```bash
-.venv/bin/python -m userbot.import_contact "chat-histories/ChatExport_X" "YourName" their_username
-```
-
-Salam: a written "Assalomu alaykum (va rahmatullohi va barokatuh)" in Latin, Cyrillic or Arabic script gets the
-fixed proper answer in the same script and length; a salam sticker is answered with the very same sticker
-and its pack is saved. Stickers are recognized by one look from a vision model (remembered per sticker) or by
-what you taught with `.ai salam`.
-
-Replies are language-aware (Uzbek incl. everyday Tashkent forms, Russian, English, plus ~25 other languages
-by script or common words; anything unrecognized is answered in the language it was written in), mirror formality
-(вы/siz for formal messages) and stay non-committal about plans, times, money and favors.
-Model routing: `USERBOT_MODELS=nemotron,omni,…` — text goes to the first model, photos to vision models first.
-
-Only your own messages are learned from (forwards, links and messages containing slurs are skipped).
-This writes `userbot/style/` (profile + 400 real example messages, git-ignored); each reply includes the
-profile and 40 random examples. Re-run any time — the userbot picks it up without a restart.
-
-Guards: model reasoning is switched off for replies and any reply that looks like leaked reasoning is
-never sent; assistant-speak lines are dropped; identity questions ("are you a bot?") are ignored.
-
-⚠️ `userbot/account.session` gives full access to your account — never share or commit it.
-Telegram may restrict accounts that look automated; keep volumes low.
-
-## Notes
-- Models and providers are configured in `backend/config.py` (`MODELS`, `PROVIDERS`). Any OpenAI-compatible provider can be added.
-- Free models are often rate-limited (429/503); `backend/llm.py` retries twice with backoff.
-- State is in memory (`backend/storage.py`) — lost on restart. Swap for Redis/Postgres when needed.
+| | |
+|---|---|
+| `userbot/main.py` | start-up, Telegram event handlers, the daily loops |
+| `userbot/replies.py` · `groups.py` | private chats · group chats |
+| `userbot/drafting.py` · `wording.py` · `judge.py` | the prompt and model call · rules about the text · what must not be said |
+| `userbot/commands.py` · `pilot.py` · `quick.py` | `.ai` commands and dashboard actions · orders · orders by rule |
+| `userbot/people.py` · `memory.py` · `lessons.py` | who is who · facts and notes · what you taught it |
+| `userbot/lookup.py` · `voice.py` · `media.py` · `rhythm.py` | web lookups · transcription · stickers, GIFs, clips · timing |
+| `userbot/simulate.py` · `simscore.py` | running and scoring conversations without Telegram |
+| `backend/` | models (`llm.py`, `config.py`), dashboard relay (`admin.py`, `admin.html`) |
+| `scripts/` · `deploy/` · `tests/` | services and backups · server setup · tests |

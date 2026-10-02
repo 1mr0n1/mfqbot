@@ -99,18 +99,6 @@ def contact_style_block(path, incoming: str) -> str:
     return block
 
 
-def unsure_phrases(incoming: str) -> str:
-    """Your own ways of saying "don't know yet", in the language of this conversation."""
-    try:
-        bank = json.loads((C.STYLE_DIR / "phrases.json").read_text())
-    except (OSError, ValueError):
-        bank = {}
-    code = lang.base(lang.detect(incoming)) or "ru"
-    phrases = bank.get(code) or {"ru": ["не знаю", "хз", "посмотрим"], "en": ["idk", "not sure"],
-                                 "uz": ["bilmasam", "bilmadim"]}.get(code) or ["(say it in their language)"]
-    return ", ".join(f'"{p}"' for p in phrases)
-
-
 def style_stats(contact: User) -> dict:
     """Your measured habits (lengths, punctuation): with this person if they have a style file, else in general."""
     try:
