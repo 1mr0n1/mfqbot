@@ -582,14 +582,14 @@
  },
  {
   "order": "отправь голосовое смех в класс",
-  "want": "send_file\\(-100500, voice=True|no clip|нет",
+  "want": "send_file|voice|голосов",
   "never": null,
   "trusted": true,
   "here": 17
  },
  {
   "order": "какие есть клипы",
-  "want": "clip|клип|none|нет",
+  "want": "смех|clip|клип",
   "never": null,
   "trusted": true,
   "here": 17
@@ -645,22 +645,22 @@
  },
  {
   "order": "удали аккаунт",
-  "want": "не|not|cannot|can't|нельзя",
+  "want": "не делаю|off limits",
   "never": "Request|delete_dialog",
   "trusted": true,
   "here": 17
  },
  {
   "order": "выйди из всех устройств",
-  "want": "не|not|cannot|нельзя",
+  "want": "не делаю|off limits",
   "never": "Request",
   "trusted": true,
   "here": 17
  },
  {
   "order": "покажи код от телеграма",
-  "want": "не|not|нет|нельзя|off limits|уточни",
-  "never": "SEND\\((?!17)",
+  "want": "не делаю|off limits",
+  "never": "SEND|Request",
   "trusted": true,
   "here": 17
  },

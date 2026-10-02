@@ -919,6 +919,15 @@ _VERBS = (r"напиши|отпиши|отправь|скинь|перешли|�
 _INFINITIVES = (r"написать|отправить|скинуть|переслать|ответить|удалить|заблокировать|закрепить|поменять|поставить|создать|"
                 r"добавить|выйти|зайти|вступить|перейти|прочитать|найти|напомнить")
 _LEAD = r"(?:(?:бот|слушай|слышь|эй|ну|а|и|так|давай|пж|пожалуйста|плиз|please|pls|hey|ok|ок|быстро|теперь|ещ[её]|now|then)[\s,:!]+)*"
+# Never done, by anyone's order — and never left to a model to refuse
+CLOSED_RE = re.compile(
+    r"\b(код|code|kod)\w*\b.{0,25}\b(телеграм\w*|telegram|входа|логина|login|verification|подтвержден\w*|смс|sms)\b"
+    r"|\b(телеграм\w*|telegram|login|verification|смс|sms)\b.{0,25}\b(код|code|kod)\w*\b"
+    r"|\bпарол\w*|\bpassword\b|\b2fa\b|двух(фактор|этап)\w*|two[-\s]?(factor|step)"
+    r"|(удали|удалить|снеси|delete|remove)\w*\s+(мой\s+|my\s+|the\s+)?(аккаунт|account)"
+    r"|(выйди|выйти|разлогин\w*|заверши\w*|log\s*out|terminate)\b.{0,30}\b(устройств\w*|сесси\w*|devices?|sessions?)"
+    r"|(смени|поменяй|измени|change)\w*\s+(мой\s+|my\s+)?(номер(\s+телефона)?|phone(\s+number)?)\b", re.I)
+
 _TIME = (r"(?:(?:через\s+(?:\d+\s*)?\S+|в\s+\d{1,2}(?:[:.]\d\d)?(?:\s+(?:утра|вечера|ночи|дня|часов|часа))?|завтра(?:\s+(?:утром|вечером|днем|днём))?"
          r"|сегодня(?:\s+вечером)?|потом|позже|in\s+\d+\s*\w+|at\s+\d{1,2}(?::\d\d)?(?:\s*[ap]m)?|tomorrow|later)[\s,]+)?")
 _MORE_VERBS = r"исправь|отредактируй|достань|сними|сделай|позвони|набери|передай|верни|call"
@@ -981,6 +990,13 @@ async def run(ctx, order: str, here: int | None = None, trusted: bool = False, m
             trace.emit("decision", "Pilot", f"Order: {order[:300]}")
     r = run_state
     report = None
+    if CLOSED_RE.search(r["order"]) and not r["steps"]:
+        # decided here, not by a model: one once made up a "login code" and sent it
+        closed = ("Этого я не делаю: коды входа, пароли, сессии, номер телефона и удаление аккаунта закрыты."
+                  if re.search("[а-яё]", r["order"], re.I) else
+                  "I don't do that: login codes, passwords, sessions, the phone number and deleting the account are off limits.")
+        trace.emit("warning", "Pilot", f"Refused (off limits): {r['order'][:120]}")
+        return closed if r.get("trusted") else f"🛠 {r['order']}\n{closed}"
     if "script" not in r:  # a common order with one obvious meaning: the steps come from rules, not from a model
         r["script"] = []
         steps = quick.plan(r["order"])
@@ -1019,6 +1035,12 @@ async def run(ctx, order: str, here: int | None = None, trusted: bool = False, m
             report = str(step.get("done") or step.get("ask"))
             if r.get("trusted") and ("ask" in step or report.rstrip().endswith("?")):
                 asked_back = {"order": r["order"], "question": report[:200], "chat": r["here"], "at": time.time()}
+            break
+        signature = json.dumps(step, ensure_ascii=False, sort_keys=True)
+        r.setdefault("seen", []).append(signature)
+        if r["seen"].count(signature) >= 3:  # the same step a third time: it is going in circles
+            report = "не получилось: один и тот же шаг не срабатывает" if re.search("[а-яё]", r["order"], re.I) \
+                else "couldn't do it: the same step keeps failing"
             break
         name = step.get("tool")
         # some models put the arguments next to "tool" instead of inside "args"

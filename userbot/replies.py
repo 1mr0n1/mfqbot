@@ -68,6 +68,9 @@ async def no_text_reply(chat_id: int, who: str, action: str, history):
     trace.emit("sent", who, f"[reaction {emoji}] instead of a text reply")
 
 
+STOCK_QUESTIONS = {"ru": ["чё делаешь?", "что нового?", "как день прошёл?", "какие планы?"],
+                   "en": ["wyd?", "what's new?", "how was ur day?"], "uz": ["nima gap?", "nima qilyapsan?", "kun qanday o'tdi?"]}
+
 # "ок щас", "ща гляну", "lemme check": a promise to come back in a moment
 DEFER_RE = re.compile(
     r"\b(щас|ща|секунд\w*|сек|минутк\w*|минуту|погоди|подожди)\b|\bсейчас\s*(?:$|[,.!]|скину|гляну|посмотрю|проверю|сделаю|напишу|найду)"
@@ -457,11 +460,16 @@ async def reply_flow(chat_id: int, contact: User):
                 reply = await generate(history, contact, hint + (
                     "\nYour line has to END WITH A QUESTION for them — one short question, nothing else.\n")) or ""
             if keep_going and not action and "?" not in (reply or ""):
-                # the point was to give them something to answer; a filler line doesn't, so close like a person would
-                trace.emit("decision", who, "No good question came to mind — leaving it at a reaction")
-                action = judge.closer_action(history, state.handled.get(str(chat_id), 0)) if C.SMART_SKIP else None
-                if not action:
-                    return
+                # the model would not ask anything: one of your own stock questions, if it wasn't just used
+                stock = [q for q in STOCK_QUESTIONS.get(lang.base(lang.detect(their_text)) or "ru", STOCK_QUESTIONS["ru"])
+                         if not stale_parts(history, [q])]
+                if stock:
+                    reply = random.choice(stock)
+                else:
+                    trace.emit("decision", who, "No good question came to mind — leaving it at a reaction")
+                    action = judge.closer_action(history, state.handled.get(str(chat_id), 0)) if C.SMART_SKIP else None
+                    if not action:
+                        return
             if action:  # the model decided this needs no text
                 await no_text_reply(chat_id, who, action, history)
                 return

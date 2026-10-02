@@ -8,6 +8,10 @@ from telethon.tl.types import User, Channel
 from userbot import pilot, trace
 trace.emit = lambda *a, **k: None   # tests must not write into the real dashboard log
 pilot.trace = trace
+import tempfile, pathlib
+from userbot import config as C
+C.CLIPS_PATH = pathlib.Path(tempfile.mkdtemp()) / "clips.json"     # never your real clips
+C.CLIPS_PATH.write_text(json.dumps({"смех": {"kind": "voice", "msg_id": 5}}, ensure_ascii=False))
 pilot.people = lambda: "Family: @mom_x is my mom, @sis_x is my little sister, @uncle_x is my uncle. Best friend: Шерзод. Cuh = @cuh_x."
 def user(i, first, last=None, username=None): return User(id=i, first_name=first, last_name=last, username=username)
 PEOPLE = [user(11, "Тимур Ким", "9 Б"), user(12, "Dilnoza", "Karimova", "mom_x"), user(13, "Азиз", None, "aziz"), user(14, "Rustam"),
