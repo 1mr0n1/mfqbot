@@ -278,6 +278,7 @@ def clean_reply(reply: str) -> str:
         if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line) or REFUSAL_RE.search(line):
             continue
         line = FAKE_TAG_RE.sub("", HTML_TAG_RE.sub("", line))
+        line = re.sub(r"^\s*\d{1,2}[.)]\s+(?=\D)", "", line)  # "1) …" list numbering
         if first:  # drop a "Name:" speaker label
             line = re.sub(rf"^\s*{re.escape(first)}\s*:\s*", "", line, flags=re.I)
         line = REPEAT_RE.sub(lambda m: m.group(1) * 8, line).strip()
@@ -308,7 +309,7 @@ def masculine(line: str) -> str:
 MEDIA_SPLIT_RE = re.compile(r"(\[(?:sticker|gif|voice|video)\s+[^\]]+\])", re.I)
 
 
-def split_reply(reply: str) -> list[str]:
+def split_reply(reply: str, wanted: int = 0) -> list[str]:
     """One part per line (media tags on their own). Text beyond MAX_PARTS messages is dropped, not glued together:
     when the model emits a pile of short lines it is imitating bursts badly, and only the start makes sense."""
     parts = [p.strip() for line in reply.splitlines() for p in MEDIA_SPLIT_RE.split(line) if p.strip()]
@@ -317,10 +318,23 @@ def split_reply(reply: str) -> list[str]:
         if media.MEDIA_LINE_RE.match(p):
             if not any(media.MEDIA_LINE_RE.match(k) for k in kept):
                 kept.append(p)  # at most one media item
-        elif texts < C.MAX_PARTS:
+        elif texts < max(C.MAX_PARTS, wanted):  # wanted: they asked that many separate questions
             kept.append(p)
             texts += 1
     return kept
+
+
+def answer_each(several: list, parts: list[str], fixed: str | None) -> bool:
+    """Several questions, one answer line each: check every pair on its own, so a made-up "я дома" is put off
+    without throwing away the correct answer to the other question. -> False if lines and questions don't match up."""
+    lines = [i for i, p in enumerate(parts) if p != fixed and not media.MEDIA_LINE_RE.match(p)]
+    if len(several) < 2 or len(lines) != len(several):
+        return False
+    for i, question in zip(lines, several):
+        kind = judge.overreach(question.raw_text or "", parts[i], memory.today_note())
+        if kind:
+            parts[i] = judge.dodge(kind, lang.base(lang.detect(question.raw_text or "")))
+    return True
 
 
 HOLDOUT: set[str] = set()  # replies hidden from the examples (the simulator's answer key); empty in production
@@ -751,7 +765,7 @@ async def reply_flow(chat_id: int, contact: User):
             await no_text_reply(chat_id, who, action, history)
             return
 
-        from_model = False
+        from_model, several = False, []
         if greeting.reply and not greeting.rest:
             reply = greeting.reply  # fixed text, never written by the model
             trace.emit("decision", who, "They wrote the salam greeting → sending the fixed proper answer (model not used)")
@@ -765,6 +779,11 @@ async def reply_flow(chat_id: int, contact: User):
             if identity == "mixed":
                 trace.emit("decision", who, "Their message also asks who/what is answering — ignoring that part")
                 hint += IDENTITY_HINT
+            several = [] if identity else quirks.questions_in(history)
+            if several:  # more than one question: each gets its own answer, quoted
+                hint += quirks.MULTI_HINT.format(n=len(several), listing="\n".join(
+                    f"{n}. {m.raw_text.strip()[:200]}" for n, m in enumerate(several, 1)))
+                trace.emit("decision", who, f"{len(several)} questions — answering each one as a reply to it")
             trace.emit("decision", who, "Read the chat — writing a reply")
             from_model = True
             for attempt in range(C.GENERATE_RETRIES + 1):
@@ -811,13 +830,13 @@ async def reply_flow(chat_id: int, contact: User):
         # no sticker on top of a sticker, and none when the point is to get them talking
         media_just_sent = any(m.out and (getattr(m, "sticker", None) or getattr(m, "gif", None)) for m in history[:4])
         allow_media = C.MEDIA_ENABLED and not contact_style_path(contact) and not keep_going and not media_just_sent
-        parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+        parts = [p for p in split_reply(reply, len(several)) if allow_media or not media.MEDIA_LINE_RE.match(p)]
         formal = quirks.is_formal(history)
         fixed = greeting.reply if greeting.reply else None  # the fixed salam line is never rewritten
         if from_model:
             # It must not agree to plans or claim what you did or didn't do: rewrite once, then use a neutral phrase.
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
-            over = judge.overreach(their_text, said, memory.today_note())
+            over = None if answer_each(several, parts, fixed) else judge.overreach(their_text, said, memory.today_note())
             if over:
                 trace.emit("decision", who, f"Draft made a {over} I can't back up (“{said[:60]}”) — rewriting")
                 again = clean_reply(await generate(history, contact, hint + (
@@ -825,7 +844,7 @@ async def reply_flow(chat_id: int, contact: User):
                     "briefly, without agreeing.\n" if over == "commitment" else judge.NOT_KNOWN_HINT if over == "situation" else
                     "\nYour draft said yes or no about something you did today, but you don't know that. Don't answer "
                     "yes or no — put it off briefly.\n")) or "")
-                again_parts = [p for p in split_reply(again) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+                again_parts = [p for p in split_reply(again, len(several)) if allow_media or not media.MEDIA_LINE_RE.match(p)]
                 again_said = " ".join(p for p in again_parts if not media.MEDIA_LINE_RE.match(p))
                 if again_said and looks_safe(again) and not judge.overreach(their_text, again_said, memory.today_note()):
                     reply, parts = again, ([fixed] if fixed else []) + again_parts
@@ -848,10 +867,11 @@ async def reply_flow(chat_id: int, contact: User):
                     "in different words.\n")) or "")
                 if again and looks_safe(again):
                     reply = again
-                    parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+                    parts = [p for p in split_reply(reply, len(several)) if allow_media or not media.MEDIA_LINE_RE.match(p)]
         if from_model:
             # You text short. A rambling draft is rewritten once, then cut down if it's still too long.
             limit, max_parts = quirks.length_limits(style_stats(contact), their_text)
+            max_parts = max(max_parts, len(several))
             text_parts = [p for p in parts if not media.MEDIA_LINE_RE.match(p)]
             if any(len(p) > limit for p in text_parts) or len(text_parts) > max_parts + 1:
                 trace.emit("decision", who, f"Draft too long ({max(map(len, text_parts))} chars) — rewriting it shorter")
@@ -861,7 +881,7 @@ async def reply_flow(chat_id: int, contact: User):
                     "words, one message, no explanations and no story.\n")) or "")
                 if shorter and looks_safe(shorter):
                     reply = shorter
-                    parts = [p for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+                    parts = [p for p in split_reply(reply, len(several)) if allow_media or not media.MEDIA_LINE_RE.match(p)]
                 text_seen, kept = 0, []
                 for p in parts:  # whatever is left: at most max_parts short messages
                     if media.MEDIA_LINE_RE.match(p):
@@ -888,7 +908,7 @@ async def reply_flow(chat_id: int, contact: User):
                 "they just wrote with different words.\n")) or "")
             habits = punct_profile(contact)
             fresh = [p if media.MEDIA_LINE_RE.match(p) else punct.apply(p, habits)
-                     for p in split_reply(again) if allow_media or not media.MEDIA_LINE_RE.match(p)] if looks_safe(again) else []
+                     for p in split_reply(again, len(several)) if allow_media or not media.MEDIA_LINE_RE.match(p)] if looks_safe(again) else []
             fresh = [p for p in fresh if p and p not in stale_parts(history, fresh)]
             parts = ([fixed] if fixed else []) + (fresh or [p for p in parts if p != fixed and p not in stale])
             reply = "\n".join(parts)
@@ -911,7 +931,7 @@ async def reply_flow(chat_id: int, contact: User):
                     retry_hint += "Write this reply in Russian.\n"
                 reply = clean_reply(await generate(history, contact, retry_hint) or "")
                 parts = [p if media.MEDIA_LINE_RE.match(p) else punct.apply(p, habits)
-                         for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]
+                         for p in split_reply(reply, len(several)) if allow_media or not media.MEDIA_LINE_RE.match(p)]
                 problem = (await judge.review(http, their_text, "\n".join(parts), expected)
                            if parts and looks_safe(reply) else "no usable second draft")
                 if problem:
@@ -923,7 +943,7 @@ async def reply_flow(chat_id: int, contact: User):
                     return
 
         # Two thoughts, two messages — the way people text.
-        if from_model and C.SPLIT_ON and not formal and random.random() < C.SPLIT_CHANCE:
+        if from_model and C.SPLIT_ON and not formal and not several and random.random() < C.SPLIT_CHANCE:
             texts = [p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p)]
             if len(texts) == 1:
                 halves = [punct.apply(h, punct_profile(contact)) for h in quirks.split_two(texts[0])]
@@ -935,7 +955,8 @@ async def reply_flow(chat_id: int, contact: User):
         # Last gate: whatever the rewrites above produced, it still may not promise or claim things for you.
         if from_model:
             said = " ".join(p for p in parts if p != fixed and not media.MEDIA_LINE_RE.match(p))
-            late = judge.overreach(their_text, said, memory.today_note()) if said else None
+            late = None if answer_each(several, parts, fixed) or not said \
+                else judge.overreach(their_text, said, memory.today_note())
             if late:
                 neutral = judge.dodge(late, lang.base(lang.detect(their_text)))
                 trace.emit("decision", who, f"A rewrite still made a {late} (“{said[:50]}”) — sending “{neutral}” instead")
@@ -970,6 +991,9 @@ async def reply_flow(chat_id: int, contact: User):
             trace.emit("decision", who, "Sending your edited version", draft_id=draft_id)
 
         quote = quirks.reply_target(history)          # swipe-reply to a specific message when that's natural
+        # several questions: line 1 answers question 1, line 2 answers question 2… each sent as a reply to its own
+        lines = [i for i, p in enumerate(parts) if not media.MEDIA_LINE_RE.match(p) and p != fixed]
+        quotes = dict(zip(lines, several)) if from_model and len(several) >= 2 and len(lines) >= 2 else {}
         slips = from_model and not quirks.is_formal(history)  # typos only in casual chats, never in fixed replies
         sent_count = 0
         for i, part in enumerate(parts):
@@ -1004,8 +1028,9 @@ async def reply_flow(chat_id: int, contact: User):
                 slip = quirks.typo(part) if slips else None
                 text = slip[0] if slip else part
                 our_texts.setdefault(chat_id, []).append(text)
-                sent = await client.send_message(chat_id, text, reply_to=quote.id if quote else None)
-                quote = None  # only the first message quotes
+                target = quotes.get(i) or (None if quotes else quote)
+                sent = await client.send_message(chat_id, text, reply_to=target.id if target else None)
+                quote = None  # without separate questions, only the first message quotes
                 if slip:  # notice the typo a moment later and fix it, by editing or with a "*word"
                     await asyncio.sleep(rand((1.5, 4)))
                     if random.random() < 0.5:

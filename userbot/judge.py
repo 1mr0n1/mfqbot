@@ -315,8 +315,8 @@ async def review(http: httpx.AsyncClient, them: str, draft: str, expected: str |
     if expected is None and len(them.split()) >= 2 and len(text.split()) >= 2:
         if draft_lang == "uz" and their_lang != "uz":
             return f"wrong language (uz instead of {their_lang})"
-        if draft_lang == "en" and their_lang == "ru" and their_cyrillic:
-            return "wrong language (en instead of ru)"
+        if draft_lang == "en" and their_lang == "ru" and their_cyrillic and not re.search("[а-яё]", text, re.I):
+            return "wrong language (en instead of ru)"  # a Russian reply with a game or app name in it is fine
     odd = foreign_word(them, text)
     if odd:
         return f"strange word '{odd}'"

@@ -35,6 +35,29 @@ def fix_greeting(reply: str, their_text: str, formal: bool) -> str:
 WORD_RE = re.compile(r"[^\W\d_]{5,}")
 
 
+ASKING_RE = re.compile(r"\?|^\W*(кто|что|чё|че|чо|где|куда|когда|почему|зачем|как|какой|какая|какие|сколько|"
+                       r"who'?s|what'?s|who|what|where|when|why|how|which|and\s+(who|what|where|when|how)|а\s+(кто|что|где|когда|как|сколько)|kim|nima|qayer\w*|qachon|nega|qanday|necha|qancha)\b", re.I)
+
+
+def questions_in(history, limit: int = 3) -> list:
+    """Their unanswered messages that each ask something, oldest first — only when there are at least two
+    different ones. Then every question gets its own answer, sent as a reply to that message."""
+    asked, seen = [], set()
+    for msg in reversed(list(itertools.takewhile(lambda m: not m.out, history))):
+        text = (msg.raw_text or "").strip()
+        key = re.sub(r"[\W_]+", " ", text.lower()).strip()
+        if not key or key in seen or not ASKING_RE.search(text):
+            continue
+        seen.add(key)
+        asked.append(msg)
+    return asked[-limit:] if len(asked) >= 2 else []
+
+
+MULTI_HINT = ("\nThey sent {n} separate questions:\n{listing}\nAnswer every one of them: exactly {n} lines, one short "
+              "answer per line, in the same order, nothing else. Each line is sent as a reply to its question, so "
+              "don't repeat the question and don't number the lines.\n")
+
+
 def reply_target(history):
     """Which of their messages to quote (swipe-reply), or None for a plain message.
 
@@ -43,8 +66,8 @@ def reply_target(history):
     if not unanswered:
         return None
     questions = [m for m in unanswered if "?" in (m.raw_text or "")]
-    if len(unanswered) >= 2 and questions and questions[0] is not unanswered[0]:
-        return questions[0]
+    if len(unanswered) >= 2 and questions:
+        return questions[0]  # several messages, one of them a question: answer that one, as a reply to it
     newest = unanswered[0]
     import time
     if time.time() - newest.date.timestamp() > C.QUOTE_IF_OLDER_THAN:
