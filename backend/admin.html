@@ -128,12 +128,22 @@ function hhmmss(ts) { return new Date(ts * 1000).toLocaleTimeString([], {hour12:
 // Hosted elsewhere (e.g. Vercel): the address of your tunnel and your ADMIN_TOKEN, kept in this browser only.
 let store = {};
 try { store = window.localStorage; } catch { store = {}; }
+const fromLink = new URLSearchParams(location.hash.slice(1)).get("api");
+if (fromLink) { store.apiBase = fromLink; history.replaceState(null, "", location.pathname); }
 const API = (store.apiBase || "").replace(/\/+$/, ""), TOKEN = store.apiToken || "";
+let reachable = null;   // null = not tried yet, true/false = last attempt
 const HOSTED = !["127.0.0.1", "localhost"].includes(location.hostname);
 async function api(path, opts) {
   opts = opts || {};
   if (TOKEN) opts.headers = Object.assign({}, opts.headers, {Authorization: "Bearer " + TOKEN});
-  const r = await fetch(API + path, opts);
+  let r;
+  try { r = await fetch(API + path, opts); }
+  catch (e) {   // the address doesn't answer at all: wrong or expired tunnel address, or the Mac is off
+    reachable = false;
+    if (HOSTED) { $("conn").hidden = false; $("connmsg").textContent = "Can't reach " + (API || "the backend") + " — the tunnel address has probably changed."; }
+    throw e;
+  }
+  reachable = true;
   if (r.status === 401 || r.status === 403) { $("conn").hidden = false; $("connmsg").textContent = "The backend refused the token."; throw new Error("auth"); }
   return r;
 }
@@ -238,7 +248,8 @@ function renderChats() {
 function renderHeader() {
   const fresh = status.age !== null && status.age !== undefined && status.age < 15;
   const chips = [];
-  if (!fresh) chips.push('<span class="chip bad">userbot not running</span>');
+  if (reachable === false) chips.push('<span class="chip bad">can\'t reach the backend — check the address in ⚙︎</span>');
+  else if (!fresh) chips.push('<span class="chip bad">userbot not running</span>');
   else {
     if (status.paused) chips.push('<span class="chip bad">paused</span>');
     if (status.asleep) chips.push('<span class="chip warn">asleep — answers in the morning</span>');
@@ -272,7 +283,7 @@ async function poll() {
       renderLog();
     }
     $("dot").classList.add("on"); $("status").textContent = (status.account ? status.account + " · " : "") + "only reachable from this Mac";
-  } catch { $("dot").classList.remove("on"); $("status").textContent = "backend not reachable"; }
+  } catch { $("dot").classList.remove("on"); $("status").textContent = "not connected" + (API ? " to " + API.replace("https://", "") : ""); }
 }
 async function pollStatus() {
   try { status = await (await api("/admin/status")).json(); } catch { status = {}; }
