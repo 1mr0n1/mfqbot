@@ -13,3 +13,4 @@ userbot/memory/
 userbot/daylog.json
 userbot/today.json
 .vercel
+userbot/.alive

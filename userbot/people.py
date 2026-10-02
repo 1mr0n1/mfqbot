@@ -83,10 +83,22 @@ ASK_HINT = ("\nYou don't know who this is: the number isn't in your contacts and
             "\"who's this?\", \"kim bu?\"). Nothing else.\n")
 
 
+RELATIVE_RE = re.compile(
+    r"\b((отец|мать|мама|папа|брат|сестра|дядя|т[её]тя)\s+(твоей|твоего|тво[ейя])\s+\w+|"
+    r"дедушка|дед|деда|бабушка|бабуля|дядя|т[её]тя|отец|мама|папа|брат|сестра|кузен|двоюродн\w+(\s+\w+)?|"
+    r"grandpa|grandfather|grandma|grandmother|uncle|aunt|cousin|your\s+(dad|mom|father|mother|brother|sister)|"
+    r"bobo\w*|buvi\w*|amaki\w*|tog'?a\w*|xola\w*|dada\w*|oyi\w*|aka\w*|opa\w*)\b", re.I)
+
+
 async def introduced(http: httpx.AsyncClient, text: str) -> dict | None:
-    """-> {"name", "about"} if these messages say who the person is. The name must be a word they really wrote."""
+    """-> {"name", "about"} if these messages say who the person is. The name must be a word they really wrote.
+    A relative answers with who they are to you, not with a name ("дедушка", "отец твоей матери"): then "name" is
+    empty and "about" holds that — the caller keeps their Telegram name."""
     if not text.strip() or len(text.split()) > 60:
         return None
+    relative = RELATIVE_RE.search(text)
+    if relative and len(text.split()) <= 8:
+        return {"name": "", "about": relative.group(0).strip().lower(), "relative": True}
     if len(text.split()) > 3 and not INTRO_RE.search(text):
         return None  # a longer message with no "я / это / I'm": not an introduction, don't spend a model call
     try:

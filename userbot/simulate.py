@@ -39,7 +39,8 @@ from . import state as state_module  # noqa: E402
 
 state_module.STATE_PATH = Path(_tmp) / "state.json"
 
-from . import main as U  # noqa: E402
+from . import app as U  # noqa: E402
+from . import drafting, replies  # noqa: E402
 from . import trace  # noqa: E402
 
 _ids = itertools.count(1000)
@@ -147,7 +148,7 @@ async def run_scenario(fake: FakeClient, contacts: dict, sc: dict) -> dict:
         token = _emit_sink.set(captured)
         started = time.monotonic()
         try:
-            await U.reply_flow(chat_id, contact)
+            await replies.reply_flow(chat_id, contact)
         finally:
             _emit_sink.reset(token)
         sent = fake.sent.get(chat_id, [])[before:]
@@ -180,13 +181,13 @@ async def main():
     out_path = Path(args[1]) if len(args) > 1 else None
     scenarios = [s for s in data["scenarios"] if not only or s["id"] in only]
 
-    U.HOLDOUT.update(U.holdout_key(t) for t in data.get("holdout", []))  # never show the answer key as an example
+    drafting.HOLDOUT.update(drafting.holdout_key(t) for t in data.get("holdout", []))  # never show the answer key as an example
     fake = FakeClient()
     U.client = fake
     U.me = User(id=1, first_name=data.get("me", {}).get("first_name", "Me"), last_name=data.get("me", {}).get("last_name"))
     trace.emit = _emit
     trace.draft_cancelled = _never_cancelled
-    U.trace.emit, U.trace.draft_cancelled = _emit, _never_cancelled
+    trace.emit, trace.draft_cancelled = _emit, _never_cancelled
 
     async def _no_dashboard(draft_id):
         return {}
