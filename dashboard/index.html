@@ -60,6 +60,10 @@
   .row:hover, .chatrow:hover { background:var(--panel); }
   .time { color:var(--dim); font-variant-numeric:tabular-nums; }
   .badge { font-size:11px; padding:2px 7px; border-radius:20px; border:1px solid; justify-self:start; white-space:nowrap; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; border-radius:0; background:transparent; } .seg button.on { background:var(--blue); color:#fff; }
+  .row.them { border-left:3px solid var(--blue); } .row.bot { border-left:3px solid var(--green); background:rgba(60,180,110,.07); }
+  .row.note { opacity:.75; } .row .times { color:var(--dim); font-size:11px; margin-left:6px; }
   .incoming { color:var(--blue); } .decision { color:var(--dim); } .draft-b { color:var(--amber); }
   .sent { color:var(--green); } .cancelled, .warning { color:var(--red); } .system { color:var(--violet); }
   .chat { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -142,8 +146,14 @@
   <div class="hint">Auto = the bot answers · Manual = it never answers, only tells you · Off = ignored. "Answer now" makes it reply even where it stayed silent (left to you, ignored, no reply needed). Type your own text and press Send to answer yourself — it's sent with normal typing.</div>
   <div id="chats"><div class="empty">Chats show up here once someone writes.</div></div>
 
+  <h2>Groups</h2>
+  <div class="hint">Groups this account is in. Where the switch is on, the bot reads along and answers when someone writes your name, your @username, or replies to you — and only then.</div>
+  <div class="toggles" id="groups"><div class="empty" style="grid-column:1 / -1">The list appears a minute after the userbot starts.</div></div>
+
   <h2>Decision log</h2>
-  <div style="display:flex; gap:8px; margin-bottom:8px">
+  <div class="hint">Messages = only what people wrote and what the account sent. Everything = also why the bot did what it did. Problems = warnings and cancelled drafts.</div>
+  <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap">
+    <span class="seg" id="view"><button data-v="messages" class="on">Messages</button><button data-v="all">Everything</button><button data-v="problems">Problems</button></span>
     <select id="filter"><option value="">All chats</option></select>
     <button id="clear">Clear view</button>
   </div>
@@ -378,13 +388,66 @@ function renderHeader() {
 }
 
 /* ---------- log ---------- */
+let view = "messages";
+try { view = store.logView || "messages"; } catch {}
+const NOISE = /^(Typing…|Read the chat|Model used|Reading ~|Done —)/;
+function shown(e) {
+  if (view === "messages") return e.kind === "incoming" || e.kind === "sent";
+  if (view === "problems") return e.kind === "warning" || e.kind === "cancelled";
+  return !(e.kind === "decision" && NOISE.test(e.text));
+}
 function renderLog() {
   const chat = $("filter").value;
-  const rows = events.filter(e => e.id > hiddenBefore && (!chat || e.chat === chat)).slice(-300).reverse();
-  $("log").innerHTML = rows.length ? rows.map(e => {
+  const picked = events.filter(e => e.id > hiddenBefore && (!chat || e.chat === chat) && shown(e)).slice(-300);
+  const rows = [];   // the same line several times in a row becomes one line with a counter
+  for (const e of picked) {
+    const last = rows[rows.length - 1];
+    if (last && last.e.kind === e.kind && last.e.chat === e.chat && last.e.text === e.text) { last.n++; last.e = e; }
+    else rows.push({e, n: 1});
+  }
+  rows.reverse();
+  $("log").innerHTML = rows.length ? rows.map(({e, n}) => {
     const cls = e.kind === "draft" ? "draft-b" : e.kind;
-    return `<div class="row"><span class="time">${hhmmss(e.ts)}</span><span class="badge ${cls}">${esc(e.kind)}</span><span class="chat">${esc(e.chat)}</span><span class="msg">${esc(e.text)}</span></div>`;
-  }).join("") : '<div class="empty">Waiting for activity…</div>';
+    const side = e.kind === "incoming" ? "them" : e.kind === "sent" ? "bot" : "note";
+    const label = e.kind === "incoming" ? "they wrote" : e.kind === "sent" ? "bot sent" : e.kind;
+    return `<div class="row ${side}"><span class="time">${hhmmss(e.ts)}</span><span class="badge ${cls}">${label}</span><span class="chat">${esc(e.chat)}</span><span class="msg">${esc(e.text)}${n > 1 ? `<span class="times">× ${n}</span>` : ""}</span></div>`;
+  }).join("") : `<div class="empty">${view === "messages" ? "No messages yet." : view === "problems" ? "No problems." : "Waiting for activity…"}</div>`;
+}
+for (const b of $("view").querySelectorAll("button")) {
+  b.classList.toggle("on", b.dataset.v === view);
+  b.addEventListener("click", () => {
+    view = b.dataset.v; try { store.logView = view; } catch {}
+    for (const o of $("view").querySelectorAll("button")) o.classList.toggle("on", o === b);
+    renderLog();
+  });
+}
+
+/* ---------- groups ---------- */
+const groupEls = new Map();
+function renderGroups() {
+  const list = status.groups || [], box = $("groups");
+  if (!list.length) return;
+  if (!groupEls.size) box.innerHTML = "";
+  for (const g of list) {
+    let el = groupEls.get(g.id);
+    if (!el) {
+      el = document.createElement("button");
+      el.className = "toggle"; el.type = "button";
+      el.innerHTML = '<span class="txt"><span class="lbl"></span><span class="hnt"></span></span><span class="sw"></span>';
+      el.addEventListener("click", async () => {
+        const turnOn = !el.classList.contains("on");
+        el.classList.toggle("on", turnOn); el.classList.add("wait"); el.dataset.pending = "1";
+        await command("group", {chat: String(g.id), value: turnOn ? "on" : "off"});
+        setTimeout(() => { el.classList.remove("wait"); delete el.dataset.pending; pollStatus(); }, 2500);
+      });
+      groupEls.set(g.id, el); box.appendChild(el);
+    }
+    el.querySelector(".lbl").textContent = g.name;
+    if (!el.dataset.pending) {
+      el.classList.toggle("on", g.on);
+      el.querySelector(".hnt").textContent = g.on ? "answers when you are called" : "ignored";
+    }
+  }
 }
 
 async function poll() {
@@ -401,7 +464,7 @@ async function poll() {
 }
 async function pollStatus() {
   try { status = await (await api("/admin/status")).json(); } catch { status = {}; }
-  renderHeader(); renderChats(); renderToggles();
+  renderHeader(); renderChats(); renderToggles(); renderGroups();
 }
 
 $("pause").addEventListener("click", () => command(status.paused ? "resume" : "pause").then(() => setTimeout(pollStatus, 1500)));

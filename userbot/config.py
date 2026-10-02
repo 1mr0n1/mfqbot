@@ -53,6 +53,9 @@ SUMMARY_TIME = os.environ.get("USERBOT_SUMMARY_TIME", "21:30")  # empty = no aut
 
 # Group chats: answer only when mentioned or replied to
 GROUPS = os.environ.get("USERBOT_GROUPS", "true").lower() in ("1", "true", "yes")
+# Extra names people call you in groups, besides your first name and @username (comma-separated, any alphabet)
+NAME_WORDS = [w.strip().lower() for w in os.environ.get("USERBOT_NAMES", "").split(",") if w.strip()]
+GROUP_FRESH = 15 * 60            # a mention found by the group scan is answered only if it is this recent
 GROUP_CONTEXT = 15               # how many recent group messages the model sees
 
 # Voice messages are transcribed locally with Whisper (see voice.py)
