@@ -3,7 +3,7 @@
 #
 # After the Mac changes network or wakes up, Tailscale's public entry points can keep refusing connections
 # although `tailscale funnel status` still says "on". Re-creating the funnel fixes it, so this loop tests the
-# public address through every entry point once a minute and re-creates the funnel when most of them fail twice
+# public address through every entry point once a minute and re-creates the funnel when all of them fail three times
 # in a row.   Run:  nohup sh scripts/funnel_watch.sh >> funnel_watch.log 2>&1 &
 TS="${TAILSCALE:-/Applications/Tailscale.app/Contents/MacOS/Tailscale}"
 PORT="${PORT:-8000}"
@@ -22,8 +22,8 @@ while true; do
     code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' --resolve "$HOST:443:$ip" "https://$HOST/health")
     [ "$code" = 000 ] && failed=$((failed + 1))
   done
-  if [ "$total" -eq 0 ] || [ $((failed * 2)) -gt "$total" ]; then bad=$((bad + 1)); else bad=0; fi
-  if [ "$bad" -ge 2 ]; then
+  if [ "$total" -eq 0 ] || [ "$failed" -eq "$total" ]; then bad=$((bad + 1)); else bad=0; fi
+  if [ "$bad" -ge 3 ]; then
     echo "$(date '+%F %T') $failed of $total entry points fail — re-creating the funnel"
     "$TS" funnel reset >/dev/null 2>&1; sleep 2; "$TS" funnel --bg "$PORT" >/dev/null 2>&1
     bad=0; sleep 60
