@@ -1,0 +1,66 @@
+{
+ "contacts": {
+  "f": {
+   "first_name": "Sherzod"
+  }
+ },
+ "scenarios": [
+  {
+   "id": 1,
+   "who": "f",
+   "tag": "closers",
+   "history": [
+    [
+     "скинь дз",
+     false
+    ],
+    [
+     "ща скину",
+     true
+    ]
+   ],
+   "turns": [
+    "ок",
+    "спасибо",
+    "ахах",
+    "ладно",
+    "👍",
+    "пока"
+   ]
+  },
+  {
+   "id": 2,
+   "who": "f",
+   "tag": "dry-after-question",
+   "history": [
+    [
+     "привет",
+     false
+    ],
+    [
+     "привет, как дела?",
+     true
+    ]
+   ],
+   "turns": [
+    "норм",
+    "да",
+    "ок"
+   ]
+  },
+  {
+   "id": 3,
+   "who": "f",
+   "tag": "who-photo",
+   "history": [
+    [
+     "смотри",
+     false
+    ]
+   ],
+   "turns": [
+    "кто это?"
+   ]
+  }
+ ]
+}

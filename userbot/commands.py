@@ -9,8 +9,8 @@ from telethon import errors, events, functions
 from telethon.tl.types import User
 from . import config as C
 from . import daylog, media, memory, pfp, rhythm, salam, toggles
-from . import pilot, trace
-from . import app
+from . import people, pilot, trace
+from . import app, lessons
 from .app import COMMAND_RE, cancel, commander_ids, commanding, contacts, forced, full_name, group_done, group_names, http, log, names, our_ids, our_texts, pending, pilot_busy, push_history, resolve_name, send_as_bot, set_chat_mode, spawn, state, type_like_a_person
 from .groups import answer_in_group, cancel_group
 from .replies import reply_flow, reply_to_unread, spam
@@ -32,6 +32,10 @@ async def on_command(event):
 
     if arg == "summary":
         await app.client.send_message("me", daylog.summary())
+        return
+    if arg == "report":  # the morning report, now; ".ai report today" for the day so far
+        from datetime import datetime as _dt
+        await app.client.send_message("me", daylog.report(_dt.now() if tag == "today" else None))
         return
     if arg == "fwd":
         await app.client.send_message("me", await forward_command(tag, replied))
@@ -330,6 +334,58 @@ async def own_photo_to_avatar(event) -> bool:
     return True
 
 
+SAVE_CLIP_RE = re.compile(r"^\W*(?:сохрани|запиши|save)\b(?:\s+(?:это|голос\w*|кружок|clip|this|it))?(?:\s+(?:как|as))?\s*[:\-]?\s*"
+                          r"(?P<tag>[^\W\d_][\w-]{1,24})\W*$", re.I)
+
+
+async def teach(event) -> bool:
+    """Your other account is teaching the account how to behave (see lessons.py). -> True if this message was that."""
+    parsed = lessons.parse(event.raw_text or "")
+    if not parsed:
+        return False
+    action, value = parsed
+    if action == "list":
+        taught = lessons.rules()
+        text = "\n".join(f"{n}. {r}" for n, r in enumerate(taught, 1)) if taught else "пока ничего не запомнил"
+    elif action == "forget":
+        gone = lessons.forget_rule(int(value))
+        text = f"забыл: {gone}" if gone else "нет такого правила"
+    else:
+        number = lessons.add_rule(value)
+        text = f"запомнил (правило {number})"
+        trace.emit("system", names.get(event.chat_id, ""), f"Taught a rule: {value[:200]}")
+    await app.client.send_read_acknowledge(event.chat_id)
+    await send_as_bot(event.chat_id, text[:3900], reply_to=event.id)
+    state.mark_handled(event.chat_id, event.id)
+    return True
+
+
+async def save_clip_from_owner(event) -> bool:
+    """Your other account sends a voice message (or round video) and says "сохрани как привет": it is copied to
+    this account's Saved Messages and becomes a clip the account can send. -> True if this message was that."""
+    match = SAVE_CLIP_RE.match(event.raw_text or "")
+    if not match:
+        return False
+    source = event.message if media.clip_kind(event.message) else None
+    if not source and event.is_reply:
+        replied = await event.get_reply_message()
+        source = replied if media.clip_kind(replied) else None
+    if not source:
+        source = next((m for m in await app.client.get_messages(event.chat_id, limit=12)
+                       if media.clip_kind(m) and not m.out and event.date.timestamp() - m.date.timestamp() < 900), None)
+    if not source:
+        return False  # no voice message around: not about a clip
+    tag = match.group("tag").lower()
+    kind = media.clip_kind(source)
+    saved = await app.client.send_file("me", source.media, voice_note=kind == "voice", video_note=kind == "video")
+    media.add_clip(tag, saved)
+    trace.emit("system", names.get(event.chat_id, ""), f"Saved a {kind} clip as '{tag}'")
+    await app.client.send_read_acknowledge(event.chat_id)
+    await send_as_bot(event.chat_id, f"сохранил как «{tag}»", reply_to=event.id)
+    state.mark_handled(event.chat_id, event.id)
+    return True
+
+
 order_queue: dict[int, list] = {}   # chat -> messages of an order still arriving ("зайди по ссылке" + the link)
 
 
@@ -415,6 +471,13 @@ async def run_command(cmd: dict):
             state.disable(gid)
             cancel_group(gid)
         trace.emit("system", group_names.get(gid, str(gid)), f"Group replies {'ON' if on else 'off'} (set from the dashboard)")
+    elif kind == "person" and str(cmd.get("chat", "")).lstrip("-").isdigit():  # how close someone is, set by you
+        pid, level = int(cmd["chat"]), cmd.get("value")
+        if level in ("family", "close", "known", "stranger"):
+            prof = people.profile(pid)
+            people.save_profile(pid, prof.get("telegram_name") or str(pid), closeness=level, closeness_by="you")
+            trace.emit("system", prof.get("given_name") or prof.get("telegram_name") or str(pid),
+                       f"Closeness set to “{level}” from the dashboard (it stays as you set it)")
     elif kind in ("gsay", "ganswer") and str(cmd.get("chat", "")).lstrip("-").isdigit():  # a group row
         gid = int(cmd["chat"])
         gname = group_names.get(gid, str(gid))
@@ -464,6 +527,10 @@ async def run_command(cmd: dict):
         state.clear_handoff(chat_id)
         forced.add(chat_id)
         cancel(chat_id)
+        newest = (await app.client.get_messages(chat_id, limit=1) or [None])[0]
+        if newest is None or newest.out:
+            trace.emit("warning", name, "Nothing to answer there — the last message in that chat is yours")
+            return
         trace.emit("decision", name, "You asked for an answer — writing one now")
         pending[chat_id] = asyncio.create_task(reply_flow(chat_id, contact))
     elif kind == "spam" and cmd.get("text", "").strip():  # value = how many times
@@ -511,6 +578,7 @@ async def command_loop():
                 "account": full_name(app.me), "paused": state.is_paused(), "approve": state.approve,
                 "asleep": rhythm.asleep(), "busy": rhythm.busy(), "models": C.MODELS, "mode": C.REPLY_MODE,
                 "toggles": toggles.snapshot(),
+                "people": people.overview() if beat % 15 == 0 or new or beat <= 3 else None,
                 "groups": sorted(({"id": gid, "name": name, "on": gid not in state.disabled}
                                   for gid, name in group_names.items()), key=lambda g: g["name"].lower()),
                 "chats": sorted(({"name": names.get(cid, str(cid)), "mode": state.mode_of(cid),

@@ -1,0 +1,100 @@
+{
+ "contacts": {
+  "friend": {
+   "first_name": "Sherzod"
+  },
+  "friend2": {
+   "first_name": "Timur"
+  }
+ },
+ "scenarios": [
+  {
+   "id": 1,
+   "who": "friend",
+   "tag": "dry",
+   "history": [
+    [
+     "привет",
+     false
+    ],
+    [
+     "привет",
+     true
+    ],
+    [
+     "как дела",
+     false
+    ],
+    [
+     "норм, у тебя?",
+     true
+    ]
+   ],
+   "turns": [
+    "норм",
+    "да",
+    "ок",
+    "ясно"
+   ]
+  },
+  {
+   "id": 2,
+   "who": "friend2",
+   "tag": "dry",
+   "history": [
+    [
+     "ты дз сделал?",
+     false
+    ],
+    [
+     "да, сделал",
+     true
+    ]
+   ],
+   "turns": [
+    "ок",
+    "ахах",
+    "в майн играю, строю дом",
+    "пока"
+   ]
+  },
+  {
+   "id": 3,
+   "who": "friend",
+   "tag": "dry-en",
+   "history": [
+    [
+     "yo",
+     false
+    ],
+    [
+     "yo",
+     true
+    ]
+   ],
+   "turns": [
+    "nm",
+    "ok"
+   ]
+  },
+  {
+   "id": 4,
+   "who": "friend2",
+   "tag": "bye",
+   "history": [
+    [
+     "завтра контрольная",
+     false
+    ],
+    [
+     "знаю, готовлюсь",
+     true
+    ]
+   ],
+   "turns": [
+    "спасибо",
+    "пока"
+   ]
+  }
+ ]
+}

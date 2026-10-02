@@ -1,6 +1,7 @@
 #!/bin/sh
 # Runs the backend, the userbot and the Telegram bot as macOS launch agents: they start when you log in and are
-# started again if they stop. A fourth agent keeps the Mac from sleeping while it is plugged in.
+# started again if they stop. A fourth agent keeps the Mac from sleeping while it is plugged in, and a fifth makes an
+# encrypted backup of your private data every night at 04:30 (see scripts/backup.sh).
 #
 #   sh scripts/services.sh install     set everything up and start it (also after moving the project folder)
 #   sh scripts/services.sh status      what is running
@@ -32,6 +33,17 @@ plist() {  # name, then the program and its arguments
   } > "$AGENTS/com.mfqbot.$name.plist"
 }
 
+nightly() {  # a job that runs once a day at 04:30 instead of staying up
+  {
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+    printf '<plist version="1.0"><dict>\n<key>Label</key><string>com.mfqbot.backup</string>\n'
+    printf '<key>ProgramArguments</key><array><string>/bin/sh</string><string>%s/scripts/backup.sh</string></array>\n' "$ROOT"
+    printf '<key>WorkingDirectory</key><string>%s</string>\n' "$ROOT"
+    printf '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>\n'
+    printf '<key>StandardOutPath</key><string>%s/backup.log</string>\n<key>StandardErrorPath</key><string>%s/backup.log</string>\n</dict></plist>\n' "$LOGS" "$LOGS"
+  } > "$AGENTS/com.mfqbot.backup.plist"
+}
+
 load()   { launchctl bootstrap "$DOMAIN" "$AGENTS/com.mfqbot.$1.plist" 2>/dev/null || launchctl kickstart "$DOMAIN/com.mfqbot.$1"; }
 unload() { launchctl bootout "$DOMAIN/com.mfqbot.$1" 2>/dev/null || true; }
 
@@ -47,9 +59,10 @@ case "${1:-status}" in
     plist userbot "$PY" -m userbot.main
     plist bot "$PY" -m bot.main
     plist awake /usr/bin/caffeinate -is
+    nightly; unload backup; launchctl bootstrap "$DOMAIN" "$AGENTS/com.mfqbot.backup.plist" 2>/dev/null || true
     load backend; sleep 3; load userbot; load bot; load awake
     echo "Installed. Logs: $LOGS"; sleep 4; sh "$0" status ;;
-  uninstall) for app in $APPS awake; do unload $app; rm -f "$AGENTS/com.mfqbot.$app.plist"; done; echo "Removed." ;;
+  uninstall) for app in $APPS awake backup; do unload $app; rm -f "$AGENTS/com.mfqbot.$app.plist"; done; echo "Removed." ;;
   stop)      for app in $APPS; do unload $app; done; echo "Stopped (the Mac is still kept awake)." ;;
   start)     load backend; sleep 3; load userbot; load bot; load awake; sleep 3; sh "$0" status ;;
   restart)   for app in ${2:-$APPS}; do launchctl kickstart -k "$DOMAIN/com.mfqbot.$app"; done; sleep 4; sh "$0" status ;;

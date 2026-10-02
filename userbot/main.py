@@ -24,9 +24,11 @@ Control it by sending these from your account (they're deleted instantly; confir
   .ai notes / .ai forgetnotes — in a private chat: show / erase what is remembered about that person
 """
 import asyncio
+import os
 import logging
 import time
 from datetime import datetime, timedelta
+import httpx
 from telethon import events
 from telethon.tl.types import User
 from . import config as C
@@ -35,7 +37,7 @@ from . import pilot, trace
 from .autoprofile import bio_loop
 from . import app
 from .app import TELEGRAM_SERVICE_ID, asked, cancel, commander_ids, contacts, describe, forced, full_name, group_done, group_seen, http, label, log, names, our_texts, pending, push_history, recent_incoming, resolve_name, spawn, state
-from .commands import command_loop, gather_order, obey, order_queue, own_photo_to_avatar, pin_commanders
+from .commands import command_loop, gather_order, obey, order_queue, own_photo_to_avatar, pin_commanders, save_clip_from_owner, teach
 from .groups import addressed_to_me, answer_in_group, group_ready, mention_allowed, scan_groups
 from .replies import echo_of, flood_from, initiative_loop, nudge_loop, reply_flow, reply_to_unread, spam
 from .wording import name_re
@@ -73,7 +75,7 @@ async def on_incoming(event):
     trace.emit("incoming", who, describe(event.message)[:300])
     spawn(push_history(event.chat_id))
     if sender.id in commander_ids:
-        if await own_photo_to_avatar(event):
+        if await teach(event) or await save_clip_from_owner(event) or await own_photo_to_avatar(event):
             return
         if pilot.is_order(event.raw_text or "") or event.chat_id in order_queue:
             order = await gather_order(event)
@@ -124,6 +126,44 @@ async def on_group_mention(event):
     if sender.id not in commander_ids and not mention_allowed(event.chat_id, sender.id, full_name(sender)):
         return
     answer_in_group(event.message, sender)
+
+
+async def model_cost() -> str:
+    """What the paid models cost since the last report (OpenRouter), and what is left."""
+    key = os.environ.get("OPENROUTER_API_KEY")
+    if not key:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=15) as web:
+            data = (await web.get("https://openrouter.ai/api/v1/credits", headers={"Authorization": f"Bearer {key}"})).json()["data"]
+    except Exception:
+        return ""
+    used, total = float(data.get("total_usage", 0)), float(data.get("total_credits", 0))
+    since = f"${used - state.spent:.2f} since the last report, " if state.spent >= 0 else ""
+    state.spent = used
+    state.save()
+    return f"Models: {since}${used:.2f} used in total, ${total - used:.2f} left"
+
+
+async def morning_report(day: datetime | None = None) -> str:
+    return daylog.report(day, await model_cost())
+
+
+async def report_loop():
+    """Every morning: what happened yesterday, in Saved Messages."""
+    if not C.REPORT_TIME:
+        return
+    hour, minute = (int(x) for x in C.REPORT_TIME.split(":"))
+    while True:
+        now = datetime.now()
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        await asyncio.sleep((target - now).total_seconds())
+        try:
+            await app.client.send_message("me", await morning_report())
+        except Exception:
+            log.exception("Morning report failed")
 
 
 async def summary_loop():
@@ -212,7 +252,7 @@ async def main():
     background = [asyncio.create_task(bio_loop(app.client, state)), asyncio.create_task(unread_loop()),
                   asyncio.create_task(summary_loop()), asyncio.create_task(command_loop()),
                   asyncio.create_task(nudge_loop()), asyncio.create_task(initiative_loop()),
-                  asyncio.create_task(heartbeat())]
+                  asyncio.create_task(heartbeat()), asyncio.create_task(report_loop())]
     try:
         await app.client.run_until_disconnected()
     finally:

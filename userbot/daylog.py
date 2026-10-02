@@ -6,7 +6,7 @@ At SUMMARY_TIME a digest is posted to Saved Messages; `.ai summary` posts it on 
 import json
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import config as C
 
@@ -57,4 +57,78 @@ def summary(since: float | None = None) -> str:
     other = [e for e in entries if e["kind"] == "profile"]
     if other:
         lines.append("\n✏️ Profile: " + "; ".join(e["text"][:60] for e in other))
+    return "\n".join(lines)[:3900]
+
+
+# ---------- the morning report ----------
+# what the account decided along the way, counted from the lines it writes to the decision log
+TALLY = [
+    ("Second look rejected", "drafts rewritten (wrong language or a made-up word)"),
+    ("Draft made a", "promises or claims about your day caught and put off"),
+    ("A rewrite still made", "promises or claims about your day caught and put off"),
+    ("Draft repeats", "repeated lines caught"),
+    ("Draft too long", "drafts shortened"),
+    ("Looked it up", "facts looked up on the web"),
+    ("Writing first", "chats it opened itself"),
+    ("Dry answer", "times it kept a dying chat going"),
+    ("No answer to", "questions asked again after no answer"),
+    ("Not in your contacts", "unknown people asked who they are"),
+    ("Now known as", "people who said who they are"),
+    ("Couldn't write a good reply", "messages it gave up on"),
+    ("No model answered", "times no model answered"),
+    ("Order from your other account", "orders from your other account"),
+    ("Taught a rule", "rules you taught it"),
+    ("Learned from your correction", "drafts you corrected (learned from)"),
+    ("The userbot was not running", "outages"),
+]
+
+
+def tally(text: str):
+    """Called for every decision-log line: counts the kinds of things worth reporting."""
+    for prefix, label in TALLY:
+        if text.startswith(prefix):
+            record("tally", "", label)
+            return
+
+
+def report(day: datetime | None = None, cost: str = "") -> str:
+    """What the account did on one day (default: yesterday) — the morning report."""
+    day = day or datetime.now() - timedelta(days=1)
+    start = day.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    entries = [e for e in _load() if start <= e["ts"] < start + 86400]
+    title = f"☀️ Report for {day:%A %d.%m}"
+    if not entries:
+        return f"{title}\nNothing happened: nobody wrote, or the account was not running."
+    kinds = defaultdict(int)
+    for e in entries:
+        kinds[e["kind"]] += 1
+    people = defaultdict(lambda: defaultdict(int))
+    for e in entries:
+        if e["who"] and e["kind"] != "tally":
+            people[e["who"]][e["kind"]] += 1
+    lines = [title,
+             f"{len(people)} chats · {kinds['replied']} replies · {kinds['reacted']} reactions · "
+             f"{kinds['skipped']} left without a reply · {kinds['ignored']} \"who is answering\" ignored"]
+    waiting = [e for e in entries if e["kind"] in ("handoff", "failed")]
+    if waiting:
+        lines.append(f"\n🚨 Left to you ({len(waiting)}):")
+        lines += [f"• {e['who']}: {e['text'][:110]}" for e in waiting[-8:]]
+    counted = defaultdict(int)
+    for e in entries:
+        if e["kind"] == "tally":
+            counted[e["text"]] += 1
+    if counted:
+        lines.append("\n🔧 Along the way:")
+        lines += [f"• {n} × {label}" for label, n in sorted(counted.items(), key=lambda kv: -kv[1])]
+    busiest = sorted(people.items(), key=lambda kv: -sum(kv[1].values()))[:8]
+    if busiest:
+        lines.append("\n👥 Busiest chats:")
+        lines += [f"• {who}: {c['replied']} replies" + (f", {c['reacted']} reactions" if c["reacted"] else "")
+                  + (f", {c['handoff'] + c['failed']} left to you" if c["handoff"] + c["failed"] else "") for who, c in busiest]
+    notes = [e for e in entries if e["kind"] == "note"]
+    if notes:
+        lines.append("\n🧠 Learned about people:")
+        lines += [f"• {e['who']}: {e['text'][:90]}" for e in notes[-6:]]
+    if cost:
+        lines.append(f"\n💳 {cost}")
     return "\n".join(lines)[:3900]

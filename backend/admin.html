@@ -61,6 +61,8 @@
   .time { color:var(--dim); font-variant-numeric:tabular-nums; }
   .badge { font-size:11px; padding:2px 7px; border-radius:20px; border:1px solid; justify-self:start; white-space:nowrap; }
   .chatrow[hidden] { display:none; }
+  .person .facts { grid-column:1 / -1; color:var(--dim); font-size:12px; white-space:pre-wrap; line-height:1.45; }
+  .person .facts:empty { display:none; }
   .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
   .seg button { border:0; border-radius:0; background:transparent; } .seg button.on { background:var(--blue); color:#fff; }
   .row.them { border-left:3px solid var(--blue); } .row.bot { border-left:3px solid var(--green); background:rgba(60,180,110,.07); }
@@ -150,6 +152,10 @@
   <h2>Groups</h2>
   <div class="hint">Groups this account is in. "Answers when called" = the bot replies when someone writes your name, your @username, or replies to you — and only then. "Answer now" replies to the latest message there. A group you leave or are removed from disappears from this list within a minute.</div>
   <div id="groups"><div class="empty">The list appears a minute after the userbot starts.</div></div>
+
+  <h2>People</h2>
+  <div class="hint">Everyone the bot keeps a folder on: how close it thinks you are (that sets the tone — change it if it is wrong and it stays as you set it), what they told it about themselves, and what it means to ask them about later.</div>
+  <div id="people"><div class="empty">Nobody yet — people appear after the bot has talked to them.</div></div>
 
   <h2>Decision log</h2>
   <div class="hint">Messages = only what people wrote and what the account sent. Everything = also why the bot did what it did. Problems = warnings and cancelled drafts.</div>
@@ -461,8 +467,40 @@ function renderGroups() {
   fold("groups");
 }
 
+/* ---------- people ---------- */
+const personEls = new Map();
+function renderPeople() {
+  const list = status.people, box = $("people");
+  if (!list || !list.length) return;
+  if (!personEls.size) box.innerHTML = "";
+  const alive = new Set(list.map(p => p.id));
+  for (const [id, el] of personEls) if (!alive.has(id)) { el.remove(); personEls.delete(id); }
+  for (const p of list) {
+    let row = personEls.get(p.id);
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "chatrow person";
+      row.innerHTML = `<span class="name"></span>
+        <select><option value="family">Family</option><option value="close">Close friend</option><option value="known">Acquaintance</option><option value="stranger">Stranger</option></select>
+        <span class="state"></span><span></span><div class="facts"></div>`;
+      const sel = row.querySelector("select");
+      sel.addEventListener("change", () => { row.dataset.pending = String(Date.now()); command("person", {chat: String(p.id), value: sel.value}); });
+      personEls.set(p.id, row); box.appendChild(row);
+    }
+    row.querySelector(".name").textContent = p.name + (p.about ? " — " + p.about : "");
+    row.querySelector(".state").textContent = (p.set_by_you ? "set by you" : p.messages ? p.messages + " messages" : "") + (p.telegram && p.telegram !== p.name ? " · " + p.telegram : "");
+    if (document.activeElement !== row.querySelector("select") && (!row.dataset.pending || Date.now() - Number(row.dataset.pending) > 20000))
+      row.querySelector("select").value = p.closeness;
+    const facts = [];
+    for (const n of p.notes || []) facts.push("• " + n);
+    for (const t of p.ask_later || []) facts.push("↻ will ask: " + t);
+    row.querySelector(".facts").textContent = facts.join("\n");
+  }
+  fold("people");
+}
+
 /* ---------- show more / show less ---------- */
-const FOLD = 4, open = {chats: false, groups: false};
+const FOLD = 4, open = {chats: false, groups: false, people: false};
 function fold(id) {
   const box = $(id), rows = [...box.querySelectorAll(":scope > .chatrow")];
   rows.forEach((row, i) => {   // never hide the row you are typing in
@@ -493,7 +531,7 @@ async function poll() {
 }
 async function pollStatus() {
   try { status = await (await api("/admin/status")).json(); } catch { status = {}; }
-  renderHeader(); renderChats(); renderToggles(); renderGroups();
+  renderHeader(); renderChats(); renderToggles(); renderGroups(); renderPeople();
 }
 
 $("pause").addEventListener("click", () => command(status.paused ? "resume" : "pause").then(() => setTimeout(pollStatus, 1500)));

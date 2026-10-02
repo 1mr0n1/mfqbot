@@ -131,6 +131,8 @@ async def get_history(chat: str):
 # ----- what the userbot is doing right now (it reports every few seconds) -----
 @router.post("/status")
 async def set_status(status: dict):
+    if status.get("people") is None and "people" in _status:
+        status["people"] = _status["people"]  # sent only now and then; keep the last list
     _status.clear()
     _status.update(status, ts=time.time())
     return {"ok": True}

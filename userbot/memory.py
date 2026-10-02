@@ -63,7 +63,8 @@ def facts_block(name: str) -> str:
     today = today_note()
     if today:
         facts += f"\nToday ({time.strftime('%A')}): {today}"
-    return (f"\nTrue facts about your own life, {name}. They may be written in English, but you say them in the "
+    from . import lessons
+    return lessons.block() + (f"\nTrue facts about your own life, {name}. They may be written in English, but you say them in the "
             "language of the chat (the school is «Лидер» in Russian) and you never write @usernames — use first "
             "names. These are background knowledge, NOT things to recite: "
             "mention a fact only when they ask about exactly that, and then give only that one thing in a few words "

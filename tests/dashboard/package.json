@@ -1,0 +1,5 @@
+{
+  "name": "dashboard-tests",
+  "private": true,
+  "dependencies": {"jsdom": "*"}
+}

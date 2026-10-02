@@ -268,3 +268,22 @@ def everyone() -> list[dict]:
                 except ValueError:
                     pass
     return out
+
+
+def overview() -> list[dict]:
+    """Everyone the account has a folder for, for the dashboard's People list."""
+    out = []
+    for prof in everyone():
+        cid = prof.get("id")
+        if not isinstance(cid, int):
+            continue
+        notes = _read(cid, "notes.json", [])
+        pending = [t for t in threads(cid) if not t.get("asked")]
+        out.append({
+            "id": cid, "name": prof.get("given_name") or prof.get("telegram_name") or str(cid),
+            "telegram": prof.get("telegram_name") or "", "about": prof.get("about") or "",
+            "closeness": prof.get("closeness") or "stranger", "set_by_you": prof.get("closeness_by") == "you",
+            "messages": prof.get("messages"), "since": prof.get("first_seen") or "",
+            "notes": [n["text"] for n in notes[-6:]],
+            "ask_later": [f"{t['what']} (from {t['ask_after']})" for t in pending[-4:]]})
+    return sorted(out, key=lambda p: ({"family": 0, "close": 1, "known": 2, "stranger": 3}.get(p["closeness"], 4), p["name"].lower()))

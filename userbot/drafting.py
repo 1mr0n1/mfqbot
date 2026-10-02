@@ -41,8 +41,13 @@ def _prefer(items: list, wanted, key, count: int) -> list:
 
 def contact_style_path(contact: User):
     """Per-person style file (see import_contact.py), or None if this person has none."""
-    path = C.STYLE_DIR / "contacts" / f"{(contact.username or '').lower()}.json"
-    return path if contact.username and path.exists() else None
+    folder = C.STYLE_DIR / "contacts"
+    if contact.username and (folder / f"{contact.username.lower()}.json").exists():
+        return folder / f"{contact.username.lower()}.json"
+    # someone without a @username is found by their name in your Telegram: contacts/_<name>.json
+    name = "_".join(" ".join(x for x in (contact.first_name, contact.last_name) if x).lower().split())
+    path = folder / f"_{name}.json"
+    return path if name and path.exists() else None
 
 
 FORCE_LANG: dict[str, str] = {}  # style file -> language for the next draft (set when an Uzbek draft was rejected)

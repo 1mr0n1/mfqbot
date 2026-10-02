@@ -22,6 +22,12 @@ async def _post(payload: dict):
 
 def emit(kind: str, chat: str = "", text: str = "", **data):
     """kind: incoming | decision | draft | sent | cancelled | warning | system"""
+    if kind in ("decision", "warning", "system"):
+        from . import daylog
+        try:
+            daylog.tally(text)
+        except Exception:
+            pass  # the report is a convenience; it must never get in the way of a reply
     task = asyncio.create_task(_post({"kind": kind, "chat": chat, "text": text, "data": data}))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)

@@ -13,7 +13,7 @@ from telethon.tl.types import InputDialogPeer, ReactionEmoji, User
 from . import config as C
 from . import daylog, judge, lang, media, memory, pfp, punct, quirks, rhythm, salam, voice
 from . import people, trace
-from . import app, lookup
+from . import app, lessons, lookup
 from .app import TELEGRAM_SERVICE_ID, asked, commander_ids, commanding, contacts, forced, full_name, hold_draft, http, label, log, names, our_ids, our_texts, owner_quiet_in, pacing_on, pending, push_history, rand, recent_incoming, revives, send_as_bot, sent_by_us, spam_until, spawn, state, to_chat_messages, type_like_a_person
 from .drafting import FORCE_LANG, contact_style_path, generate, persona, punct_profile, style_block, style_stats
 from .wording import IDENTITY_HINT, answer_each, clean_reply, identity_ignored, identity_question, looks_safe, split_reply, stale_parts
@@ -599,7 +599,10 @@ async def reply_flow(chat_id: int, contact: User):
                        draft_id=draft_id)
             failed = True  # still unanswered: it stays yours
             return
-        if edited:  # you rewrote it on the dashboard: send exactly that
+        if edited:  # you rewrote it on the dashboard: send exactly that — and learn from the correction
+            if from_model and edited != parts:
+                lessons.add_fix(their_text, "\n".join(parts), "\n".join(edited))
+                trace.emit("system", who, "Learned from your correction of this draft")
             parts, from_model = edited, False
             trace.emit("decision", who, "Sending your edited version", draft_id=draft_id)
 

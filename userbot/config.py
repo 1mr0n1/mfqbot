@@ -49,6 +49,7 @@ QUOTE_IF_OLDER_THAN = 3600       # answering something this old (seconds): quote
 
 # Evening summary in Saved Messages (see daylog.py)
 DAYLOG_PATH = HERE / "daylog.json"
+REPORT_TIME = os.environ.get("USERBOT_REPORT_TIME", "08:00")  # morning report about yesterday; empty = none
 SUMMARY_TIME = os.environ.get("USERBOT_SUMMARY_TIME", "21:30")  # empty = no automatic summary
 
 # Group chats: answer only when mentioned or replied to

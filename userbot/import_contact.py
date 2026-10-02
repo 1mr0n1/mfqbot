@@ -2,6 +2,9 @@
 
   .venv/bin/python -m userbot.import_contact "chat-histories/ChatExport_X" "YourName" their_username
 
+For someone who has no @username, give "_" + their name exactly as it shows in your Telegram, lower case, spaces as
+underscores (e.g. _папа): the userbot then recognises them by that name.
+
 Runs entirely on this machine (no model call). Writes userbot/style/contacts/<username>.json with your
 messages to them, real "they wrote → you answered" exchanges, and a few statistics. When the userbot
 talks to that username it uses ONLY this file as its style, not the general profile.
