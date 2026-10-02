@@ -52,7 +52,8 @@ Style comes from your own chats (see "Teaching it" below), never from a generic 
 - **"Щас" means something follows.** After "ок щас" / "lemme check" it comes back within about a minute with
   the answer, or a plain "couldn't find out".
 - **Facts are looked up.** A checkable claim or a dispute about the world is searched on the web before
-  answering; asked for proof, it sends the source.
+  answering; asked for proof, it sends the source. Sums ("сколько будет 17*23") are worked out, not guessed.
+- **A mood for the day** (`.ai mood`), and an online pattern that looks like a person's rather than "always on".
 - **Voice messages** are transcribed locally (Whisper). One with no words in it gets a reaction.
 - **Photos** go to a model that can see them.
 - **Timing.** Reading and thinking time depend on the message; typing sometimes pauses or restarts. Night sleep,
@@ -64,12 +65,18 @@ Style comes from your own chats (see "Teaching it" below), never from a generic 
 ### What it will not do
 
 - **Promise or claim things for you.** It does not agree to meet, lend, buy or come, does not say what you did,
-  ate or ordered, where you are, or that something "is done" — unless you told it (`.ai today <text>`).
-  Such drafts are rewritten into "не знаю ещё" and, for things only you know, you get a note.
+  ate or ordered, where you are, what mark you got, when the test is, or that something "is done" — unless you
+  told it (`.ai today <text>`) or it is in `facts.md`. Such drafts are rewritten into "не знаю ещё" ("Ты где?"
+  gets "а что?"), and for things only you know, you get a note. The same goes for things about *them* it was
+  never told (their birthday, what they lent you).
 - **Say who or what is answering.** "Are you a bot?" is ignored — not confirmed, not denied — and so is insisting.
 - **Repeat itself**, parrot the other person, or send text that could act as one of your commands.
-- **Answer the serious things** (switchable): money, codes, emergencies, a formal message from a teacher. Those
-  are left unread and reported to you.
+- **Answer the serious things** (switchable): money and debts, codes, emergencies, a formal message from a
+  teacher. Those are left unread and reported to you.
+- **Answer someone in real trouble** (not switchable): "не хочу жить", "меня бьют", "бабушке плохо, скорую
+  вызвали" always go to you, at once.
+- **Do an assistant's chores.** "Напиши стих", "write me an essay" get brushed off the way you would; `.ai …`
+  typed by someone else means nothing to it. Adverts and bait from strangers are ignored without bothering you.
 
 ### People
 
@@ -121,7 +128,9 @@ your profile and privacy, the web (search, open a page).
 - Steps that can't be undone wait for `.ai do yes`.
 - After reading what other people wrote, it may only act in the chats the order is about — text in a chat can
   never redirect it.
-- Not offered at all: deleting the account, sessions, password, phone number, the chat with login codes.
+- Refused by a fixed rule, before any model sees the order: deleting the account, sessions, password, phone
+  number, login codes.
+- An order that repeats the same step three times stops itself.
 - Web addresses on this machine or the local network are never opened.
 
 ### Your other account (`USERBOT_COMMANDERS`)

@@ -8,7 +8,7 @@ Three layers, from fast to slow. All names in here are made up.
 .venv/bin/python -m unittest discover tests
 ```
 
-About 190 cases in `test_rules.py`: what may never be sent, what counts as a promise or a made-up fact, when a
+About 330 cases in `test_rules.py`: what may never be sent, what counts as a promise or a made-up fact, when a
 chat is "dry", when you are being called in a group, what is an order and what is just talk, which web addresses
 may be opened, and so on. Run it before and after every change.
 
@@ -24,7 +24,7 @@ USERBOT_INTRO=true .venv/bin/python -m userbot.simulate tests/scenarios/who_is_t
 PYTHONPATH=. .venv/bin/python tests/group_sim.py tests/group_cases.json out.json   # being called in groups
 ```
 
-`scenarios/`: `multi` (general), `dry` and `react` (keeping a chat going vs. a 👍), `multiq` (several questions),
+`scenarios/`: `multi` (general), `hard` and `night2` (traps, family in Uzbek, scams, crises, sums), `dry` and `react` (keeping a chat going vs. a 👍), `multiq` (several questions),
 `who_is_this` (unknown people), `facts` (looking things up — set `C.LOOKUP_ON` for it).
 
 ## 3. Orders (real model, fake account)
@@ -57,7 +57,7 @@ to your own other account. It posts nothing to other people or groups.
 PYTHONPATH=. .venv/bin/python tests/full_check.py            # everything; or name sections: commands orders replies switches jobs
 ```
 
-226 checks that run every `.ai` command, every order action, every way a message can be answered (private,
+230 checks that run every `.ai` command, every order action, every way a message can be answered (private,
 group, your other account), every switch on the dashboard (that it changes behaviour, not just its position), the
 daily jobs, every backend address including the from-outside guard, the Telegram bot's commands, and the scripts
 (services, backup and restore). Telegram is replaced by a stand-in that records what the account would have done;
