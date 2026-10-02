@@ -827,7 +827,7 @@ async def reply_flow(chat_id: int, contact: User):
         opened_at = time.monotonic()  # the moment the chat was opened; reading and thinking count from here
         await asyncio.sleep(rand(C.THINK_DELAY))
 
-        hint = ""
+        hint, pfp_failed = "", False
         if C.CLOSENESS_ON:
             level = await people.closeness(client, chat_id, contact, bool(contact_style_path(contact)))
             if not contact_style_path(contact) or level == "family":  # a learned per-person style already carries the tone
@@ -851,6 +851,7 @@ async def reply_flow(chat_id: int, contact: User):
             if outcome == "changed":
                 daylog.record("profile", who, f"photo changed on {who}'s request")
             hint = pfp.HINTS[outcome]
+            pfp_failed = outcome != "changed"
 
         greeting = await salam.check(client, state, http, history)
         if greeting.sticker:  # a salam sticker is answered with the very same sticker
@@ -1084,6 +1085,12 @@ async def reply_flow(chat_id: int, contact: User):
                     await client.send_message("me", f"🤷 I couldn't write a good reply to {who} ({problem}).\n"
                                                     f"“{their_text[:300]}”\nThat one is yours.")
                     return
+
+        # The photo was NOT changed: a reply must not say it was.
+        if pfp_failed:
+            parts = [p for p in parts if not re.search(r"готово|обновл|поставил|поменял|сменил|установил|done|changed|updated|set\b", p, re.I)]
+            if not parts:
+                return
 
         # An unknown person must actually be asked who they are, even if the model forgot to.
         if from_model and asking_who and not any(people.ASKS_WHO_RE.search(p) for p in parts):
@@ -1560,6 +1567,46 @@ async def pin_commanders():
         trace.emit("system", "", f"Orders are accepted from {len(commander_ids)} other account(s) of yours, without asking back")
 
 
+AVATAR_RE = re.compile(  # "put it on the profile photo" — not just any mention of an avatar
+    r"\bна\s+ав[ауы]\b|\bна\s+аватар\w*|(постав|смени|поменя|установи|сделай)\w*\b.*(\bав[ауые]\b|аватар|фото\s+профил)"
+    r"|\b(set|make|put|use)\b.*(\bpfp\b|avatar|profile\s+(pic|photo|picture))|\bas\s+(ur|your|the|my)\s+(pfp|avatar)", re.I)
+NOT_AVATAR_RE = re.compile(r"\b(убери|удали|сними|верни|remove|delete)\b|\?", re.I)
+
+
+async def own_photo_to_avatar(event) -> bool:
+    """Your other account sends a photo and says "на аву": that exact photo becomes the profile photo.
+    The photo is taken from the message itself, the message it replies to, or the photo you sent there in the
+    last 10 minutes — never from anywhere else."""
+    text = event.raw_text or ""
+    if not AVATAR_RE.search(text) or NOT_AVATAR_RE.search(text):
+        return False
+    photo = event.message if event.message.photo else None
+    if not photo and event.is_reply:
+        replied = await event.get_reply_message()
+        photo = replied if replied and replied.photo else None
+    if not photo:
+        photo = next((m for m in await client.get_messages(event.chat_id, limit=12)
+                      if m.photo and not m.out and m.sender_id == event.sender_id
+                      and event.date.timestamp() - m.date.timestamp() < 600), None)
+    if not photo:
+        return False  # no photo of yours to use: the order goes on as text ("поставь на аву кота")
+    who = names.get(event.chat_id, "your other account")
+    try:
+        data = await photo.download_media(file=bytes)
+        await client(functions.photos.UploadProfilePhotoRequest(file=await client.upload_file(data, file_name="profile.jpg")))
+    except Exception:
+        log.exception("Setting the profile photo from the owner's own picture failed")
+        trace.emit("warning", who, "Couldn't set that photo as the profile photo (see the userbot log)")
+        await send_as_bot(event.chat_id, "не получилось поставить", reply_to=event.id)
+        return True
+    state.record_pfp()
+    trace.emit("system", who, "Profile photo set to the picture you sent from your other account")
+    await client.send_read_acknowledge(event.chat_id)
+    await send_as_bot(event.chat_id, "поставил", reply_to=event.id)
+    state.mark_handled(event.chat_id, event.id)
+    return True
+
+
 order_queue: dict[int, list] = {}   # chat -> messages of an order still arriving ("зайди по ссылке" + the link)
 
 
@@ -1666,6 +1713,8 @@ async def on_incoming(event):
     trace.emit("incoming", who, describe(event.message)[:300])
     spawn(push_history(event.chat_id))
     if sender.id in commander_ids:
+        if await own_photo_to_avatar(event):
+            return
         if pilot.is_order(event.raw_text or "") or event.chat_id in order_queue:
             order = await gather_order(event)
             if order is None or await obey(event, order):

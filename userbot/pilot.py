@@ -523,6 +523,11 @@ async def set_profile(ctx, run, first_name=None, last_name=None, bio=None):
       "photo sent in a chat (chat, e.g. \"here\")")
 async def set_avatar(ctx, run, query="", chat=""):
     data = None
+    if not chat and run["here"]:  # the owner just sent a photo in the chat where the order was given: that is "this"
+        recent = next((m for m in await ctx.client.get_messages(run["here"], limit=12)
+                       if m.photo and not m.out and time.time() - m.date.timestamp() < 900), None)
+        if recent:
+            chat = "here"
     if chat:
         entity = await resolve(ctx, chat, run["here"])
         photo = next((m for m in await ctx.client.get_messages(entity, limit=20) if m.photo), None)
@@ -550,6 +555,15 @@ async def set_avatar(ctx, run, query="", chat=""):
         raise Refused("say what picture (query) or which chat's photo (chat)")
     await ctx.client(functions.photos.UploadProfilePhotoRequest(file=await ctx.client.upload_file(data, file_name="profile.jpg")))
     return "profile photo changed"
+
+
+@tool("(nothing) — delete the current profile photo (the one before it becomes current again)", risky=True)
+async def remove_avatar(ctx, run):
+    photos = await ctx.client.get_profile_photos("me", limit=1)
+    if not photos:
+        raise Refused("there is no profile photo")
+    await ctx.client(functions.photos.DeletePhotosRequest(id=[utils.get_input_photo(photos[0])]))
+    return "current profile photo deleted"
 
 
 @tool("username — change your @username ('' removes it)", risky=True)
@@ -767,7 +781,9 @@ def prompt(ctx, here_name: str | None, chats: str = "", may_chat: bool = False, 
                 "- Which tool for which words: зайди/вступи/подпишись/join/subscribe → join; выйди/покинь/leave → leave; "
         "добавь/пригласи X в группу → invite (never send a message instead); перешли/forward → forward_last (never pin); "
         "скрой/покажи время захода, номер, фото, \"кто может звонить/добавлять\" → set_privacy; "
-                "ава/аватарка/фото профиля/pfp → set_avatar (\"поставь это на аву\" → set_avatar with chat=\"here\"); "
+                "ава/аватарка/фото профиля/pfp → set_avatar. \"это\"/\"this\" photo means the photo in the chat: set_avatar "
+        "with chat=\"here\" and NO query. Use query only when the owner describes a picture to find (\"поставь на аву "
+        "кота\"); never make up a query from what a photo shows. убери/удали аву → remove_avatar; "
                 "закрепи → pin_last; достань из архива/разархивируй → archive with on=false; "
         "\"не отвечай X автоматически\", \"я сам отвечу X\" → bot_mode manual; \"не трогай чат X\" → bot_mode off; "
         "напомни/позже/в HH:MM → schedule_message; \"ответь всем кто ждёт\" → list_chats(unread=true, kind=person) "
