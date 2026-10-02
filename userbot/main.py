@@ -240,7 +240,9 @@ def clean_reply(reply: str) -> str:
     first = (me.first_name or "").strip() if me else ""
     keep_one = random.random() < C.EMOJI_KEEP_CHANCE
     lines = []
+    reply = re.sub(r"\s+/\s+|\s+⏎\s+", "\n", reply)  # the examples' line-break marker, copied into the answer
     for line in reply.splitlines():
+        line = line.strip().lstrip("/|").strip()
         if ASSISTANT_RE.search(line) or IDENTITY_CLAIM_RE.search(line) or REFUSAL_RE.search(line):
             continue
         line = FAKE_TAG_RE.sub("", HTML_TAG_RE.sub("", line))
@@ -794,6 +796,8 @@ async def reply_flow(chat_id: int, contact: User):
                 log.info("%s: draft rejected (%s): %r", who, problem, reply[:120])
                 trace.emit("warning", who, f"Second look rejected the draft ({problem}) — rewriting: {reply[:140]}")
                 retry_hint = hint + f"\nYour previous draft was rejected: {problem}. Write a better, simpler reply.\n"
+                if problem.startswith(("Uzbek word", "wrong language (uz")):
+                    retry_hint += "Write this reply in Russian.\n"
                 reply = clean_reply(await generate(history, contact, retry_hint) or "")
                 parts = [p if media.MEDIA_LINE_RE.match(p) else punct.apply(p, habits)
                          for p in split_reply(reply) if allow_media or not media.MEDIA_LINE_RE.match(p)]

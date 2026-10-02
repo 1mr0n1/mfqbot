@@ -75,7 +75,7 @@ def index_for(key: tuple, pairs: list[dict]) -> Index:
     return _cache[full]
 
 
-MIN_SCORE = 0.5        # below this the "similar" message is about something else, and its answer misleads
+MIN_SCORE = 0.6        # below this the "similar" message is about something else, and its answer misleads
 MIN_QUERY_LETTERS = 9  # "ok", "idk", "ааа": what you answered depended on the moment, not on the words
 
 

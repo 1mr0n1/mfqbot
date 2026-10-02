@@ -198,7 +198,7 @@ def foreign_word(them: str, draft: str) -> str | None:
     return None
 
 
-VOWELS = set("аеёиоуыэюяaeiouy'ʻ‘’")
+VOWELS = set("аеёиоуыэюяйьъўaeiouy'ʻ‘’")  # й, ь, ъ break up consonant runs too ("майнкрафт" is a real word)
 
 
 def looks_random(word: str) -> bool:
@@ -304,7 +304,8 @@ DID_RE = re.compile(
     r"\b(сделал\w*|сдал\w*|прив[её]з(ла|ли)?|прин[её]с(ла|ли)?|подготовил\w*|написал\w*|выучил\w*|поел\w*|покушал\w*|кушал\w*|"
     r"взял\w*|купил\w*|забрал\w*|был\w*\s+(на|в|у)|ходил\w*|почему\s+(тебя|вас)\s+не\s+было)\b|"
     r"\bdid\s+(u|you)\b|\bhave\s+(u|you)\b|\b\w{2,}(dingmi|dingizmi|ganmisan|ganmisiz|ibmi|dimi)\b", re.I)
-CLAIM_RE = re.compile(r"^\W*(да|нет|не|неа|ага|угу|yes|yeah|yep|no|nope|nah|ha|haa|yo['ʻ‘’]?q|yoq|xa|йўқ|ҳа|"
+CLAIM_RE = re.compile(r"^\W*(да|нет|не|неа|ага|угу|ещё\s+нет|еще\s+нет|пока\s+нет|уже|yes|yeah|yep|no|nope|nah|not\s+yet|"
+                      r"ha|haa|yo['ʻ‘’]?q|yoq|xa|ха|йўқ|йук|ҳа|hali\s+yo['ʻ‘’]?q|"
                       r"\w{2,}(dim|madim|ganman|maganman))\b", re.I)
 AFFIRM_RE = re.compile(r"^\W*(да|ага|угу|ок|окей|оке\w*|хорошо|конечно|давай|го|погнали|sure|yeah|yes|yep|ok|okay|bet|"
                        r"mayli|xop|ha)\b", re.I)
