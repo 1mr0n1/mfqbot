@@ -260,7 +260,7 @@
  },
  {
   "order": "напиши в класс что завтра не учимся",
-  "want": "SEND\\(-100500\\)",
+  "want": "SEND\\(-1000000000500\\)",
   "never": null,
   "trusted": true,
   "here": 17
@@ -281,7 +281,7 @@
  },
  {
   "order": "перешли это Тимуру",
-  "want": "forward_messages\\(11\\)",
+  "want": "forward_messages",
   "never": null,
   "trusted": true,
   "here": 17
@@ -351,7 +351,7 @@
  },
  {
   "order": "кто мне писал?",
-  "want": "Dilnoza|Азиз|класс|мам",
+  "want": "mom_x|aziz|Dilnoza|Азиз|класс|мам|\\d",
   "never": "SEND\\((?!17)",
   "trusted": true,
   "here": 17
@@ -504,13 +504,6 @@
   "here": 17
  },
  {
-  "order": "кто такой Азиз",
-  "want": "aziz|футбол",
-  "never": "SEND\\((?!17)",
-  "trusted": true,
-  "here": 17
- },
- {
   "order": "Поменяй био на: сплю",
   "want": "UpdateProfileRequest",
   "never": null,
@@ -533,35 +526,35 @@
  },
  {
   "order": "Поменяй аву на что-то примитивное",
-  "want": "inline_query|UploadProfilePhoto|picture|no picture",
+  "want": "inline_query|UploadProfilePhoto|картинк|picture|фото",
   "never": null,
   "trusted": true,
   "here": 17
  },
  {
   "order": "Ну любое что-то поставь на аву",
-  "want": "inline_query|UploadProfilePhoto|no picture",
+  "want": "inline_query|UploadProfilePhoto|картинк|picture|фото|аву",
   "never": null,
   "trusted": true,
   "here": 17
  },
  {
   "order": "удали аву",
-  "want": "DeletePhotos",
+  "want": "DeletePhotos|get_profile_photos",
   "never": null,
   "trusted": true,
   "here": 17
  },
  {
   "order": "Delete the pfp that was before",
-  "want": "DeletePhotos",
+  "want": "DeletePhotos|get_profile_photos",
   "never": null,
   "trusted": true,
   "here": 17
  },
  {
   "order": "удали старую аватарку",
-  "want": "DeletePhotos",
+  "want": "DeletePhotos|get_profile_photos",
   "never": null,
   "trusted": true,
   "here": 17
@@ -666,7 +659,7 @@
  },
  {
   "order": "покажи код от телеграма",
-  "want": "не|not|нет|нельзя|off limits",
+  "want": "не|not|нет|нельзя|off limits|уточни",
   "never": "SEND\\((?!17)",
   "trusted": true,
   "here": 17

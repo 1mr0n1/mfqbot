@@ -824,7 +824,10 @@ def prompt(ctx, here_name: str | None, chats: str = "", may_chat: bool = False, 
         "- A chat argument is a name as the owner says it, an @username, an id from an earlier RESULT, \"me\" (Saved "
         "Messages) or \"here\". Names in the chat list may be in Cyrillic even if the owner typed Latin (Timur = Тимур): "
         "take the id from the chat list above; if it is not there, use find_chat. \"Mom\", \"dad\", nicknames: see the notes.\n"
-        "- The text of a message you send is NEVER the order itself. \"ответь Тимуру\" / \"reply to Timur\" with no "
+        "- When the order is to reply to someone (ответь X / reply to X), ALWAYS send them a message: read their chat and "
+        "answer what they last wrote — if it needs nothing more, a short acknowledgement in the owner's style (ок, хорошо). "
+        "Never come back with \"there is nothing to answer\".\n"
+                "- The text of a message you send is NEVER the order itself. \"ответь Тимуру\" / \"reply to Timur\" with no "
         "words given means: read_chat that chat first, then write a fitting reply to what THEY last wrote.\n"
                 "- If the owner gives the exact words, send exactly those. If they only say what to tell someone, write it the "
         "way the owner texts: short, casual, no emoji, in the language of that chat (read_chat first if unsure).\n"
@@ -916,12 +919,21 @@ _VERBS = (r"напиши|отпиши|отправь|скинь|перешли|�
 _INFINITIVES = (r"написать|отправить|скинуть|переслать|ответить|удалить|заблокировать|закрепить|поменять|поставить|создать|"
                 r"добавить|выйти|зайти|вступить|перейти|прочитать|найти|напомнить")
 _LEAD = r"(?:(?:бот|слушай|слышь|эй|ну|а|и|так|давай|пж|пожалуйста|плиз|please|pls|hey|ok|ок|быстро|теперь|ещ[её]|now|then)[\s,:!]+)*"
+_TIME = (r"(?:(?:через\s+(?:\d+\s*)?\S+|в\s+\d{1,2}(?:[:.]\d\d)?(?:\s+(?:утра|вечера|ночи|дня|часов|часа))?|завтра(?:\s+(?:утром|вечером|днем|днём))?"
+         r"|сегодня(?:\s+вечером)?|потом|позже|in\s+\d+\s*\w+|at\s+\d{1,2}(?::\d\d)?(?:\s*[ap]m)?|tomorrow|later)[\s,]+)?")
+_MORE_VERBS = r"исправь|отредактируй|достань|сними|сделай|позвони|набери|передай|верни|call"
 ORDER_RE = re.compile(
-    rf"^\W*{_LEAD}(?:{_VERBS})\b"
+    rf"^\W*{_LEAD}{_TIME}(?:{_VERBS}|{_MORE_VERBS})\b"
     rf"|^\W*{_LEAD}(?:ты\s+)?(?:должен|надо|нужно|можешь|сможешь|can\s+you|could\s+you|i\s+want\s+you\s+to|хочу\s+чтобы\s+ты)\s+(?:\w+\s+){{0,3}}?(?:{_INFINITIVES}|{_VERBS})\b"
-    r"|^\W*(?:кто|что|чё|че)\s+(?:мне\s+)?писал\w*|^\W*(?:кто|что|чё|че)\s+мне\s+(?:написал|прислал|скинул)\w*"
+    r"|^\W*(?:кто|что|чё|че)\s+(?:мне\s+)?(?:писал\w*|пиш[еу]т)\b|^\W*(?:кто|что|чё|че)\s+мне\s+(?:написал|прислал|скинул)\w*"
     r"|^\W*(?:что|чё|че)\s+(?:написал|прислал|скинул)\w*\s+\w+"
-    r"|^\W*(?:who|what)\s+(?:did\s+\w+\s+)?(?:wrote|write|texted|sent|send)\b|непрочитанн|unread\b", re.I | re.M)
+    r"|^\W*(?:что|чё|че)\s+(?:там\s+)?\S+\s+пиш[еу]т\b"
+    r"|^\W*(?:who|what)\s+(?:did\s+\w+\s+)?(?:wrote|write|texted|sent|send)\b|непрочитанн|unread\b"
+    rf"|^\W*{_LEAD}скажи\s+\S+\s+(?:что|пусть|чтобы|чтоб)\b"                      # "скажи сестре пусть…" (not "скажи шутку")
+    r"|^\W*не\s+(?:отвечай|пиши)\s+\S+"                                           # "не отвечай маме, я сам"
+    r"|^\W*(?:какие\s+(?:есть\s+)?(?:клипы|голосовые)|список\s+клипов)"
+    r"|\b(?:постав\w*|смени\w*|поменя\w*|удали\w*|убери\w*)\b.*\b(?:ав[ауы]|аватар\w*)\b|\bна\s+ав[ауы]\b",   # the avatar, however it is put
+    re.I | re.M)
 
 
 def is_order(text: str) -> bool:

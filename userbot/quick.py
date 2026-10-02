@@ -56,7 +56,7 @@ def _say(m):
 def _say_plain(m):
     """ "напиши Тимуру привет": the first word is the person — if a chat by that name exists (pilot checks)."""
     text, who = m.group("text2").strip().strip('"«»“”'), m.group("who")
-    if THIRD.search(text) or re.match(r"(?:что|чтобы|that|to)\b", text, re.I) or len(text) > 200 \
+    if THIRD.search(text) or re.match(r"(?:что|чтобы|that|to|и|а\s+также|and|плюс)\b", text, re.I) or len(text) > 200 \
             or re.match(r"(?:голосов|войс|voice|стикер|sticker|гиф|gif|фото|картинк|ссылк|привет|всем|мне|me|это|this)", who, re.I):
         return None
     return [("send_message", {"chat": who, "text": text})]

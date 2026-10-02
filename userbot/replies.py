@@ -304,6 +304,8 @@ async def reply_flow(chat_id: int, contact: User):
         identity = None if force else identity_question(history, identity_ignored.get(chat_id, 0))
         reason = (await judge.sensitive_reason(http, full_name(app.me), history, keywords_only=identity is not None)
                   if C.HANDOFF and not force else None)
+        if not reason and not force and judge.crisis(history):
+            reason = "someone in real trouble — this needs you, now"  # regardless of the hand-off switch
         if not reason and chat_id in state.manual and not force:
             reason = "this chat is set to manual (.ai on to change)"
         if not reason and C.HANDOFF and not force and not contact_style_path(contact) \
@@ -469,6 +471,11 @@ async def reply_flow(chat_id: int, contact: User):
                 rest = "\n".join(salam.TAIL_RE.sub(" ", salam.SALAM_RE.sub(" ", ln)).strip(" ,.!") if salam.SALAM_RE.search(ln)
                                  else ln for ln in rest.splitlines())
                 reply = (greeting.reply + "\n" + rest).strip()
+        if identity == "mixed" and re.fullmatch(r"\W*(да|нет|неа|ага|угу|yes|no|nah|nope|yeah|yep|[12]|ha|yo'?q|бот|bot)\W*", reply or "", re.I):
+            # a bare yes / no / "2" to a message that also asked what is answering IS an answer to that: not sent
+            trace.emit("decision", who, "The draft answered the who-is-answering part with a yes/no — not sending it")
+            identity_ignored[chat_id] = history[0].id
+            return
         if not reply:
             # the model answered with nothing usable (often just an emoji, which is stripped): a 👍 says the same
             if C.SMART_SKIP and from_model and "?" not in their_text and their_text.strip():

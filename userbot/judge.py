@@ -141,6 +141,22 @@ REACT_HINT = ("\nIf they ask you to like or react to their message, answer with 
 # ---------- messages the owner should handle personally ----------
 ASK = r"(скинь|скинешь|кинь|переведи|перевед[её]шь|отправь|дай|дашь|займи|одолжи|нужн[оы]|надо|tashla|tashab|o'tkaz|yubor|ber|send|give|lend|transfer|pay)"
 AMOUNT = r"(деньг\w*|денег|на\s+карт\w*|kartaga|\bpul\b|\$\s?\d{2,}|\d{2,}\s?(k\b|к\b|тыс\w*|млн\w*|mln|ming|сум\w*|sum\b|so'm|руб\w*|\$|usd))"
+# Someone in real trouble. These are never answered by the account, whatever the switches say: a person in a
+# crisis must get you, not an auto-reply. You are told at once.
+CRISIS_RE = re.compile(
+    r"не\s+хочу\s+(больше\s+)?жить|хочу\s+умереть|покончить\s+с\s+собой|суицид\w*|убью\s+себя|никому\s+не\s+нуж\w+|"
+    r"вс[её]\s+бессмысленн\w*|не\s+вижу\s+смысла|не\s+хочу\s+больше\s+ничего|"
+    r"меня\s+(бьют|бь[её]т|избива\w+|насилу\w+|шантажиру\w+|преследу\w+)|шантаж\w*|угрожа\w+\s+(мне|выложить|слить)|"
+    r"хочу\s+сбежать\s+из\s+дома|сбегу\s+из\s+дома|"
+    r"kill\s+myself|want\s+to\s+die|don'?t\s+want\s+to\s+live|no\s+reason\s+to\s+live|suicid\w*|self[-\s]?harm|"
+    r"(he|she|they|dad|mom)\s+(hits?|beats?)\s+me|being\s+blackmailed|blackmail\w*|"
+    r"yashagim\s+kelmay\w*|o'?lgim\s+kel\w*|meni\s+ur(adi|ishadi|yapti)", re.I)
+
+
+def crisis(history) -> bool:
+    return any(CRISIS_RE.search(m.raw_text or "") for m in itertools.takewhile(lambda m: not m.out, history))
+
+
 STRONG = [  # unmistakable cases, decided without a model
     ("a verification code or password",
      r"\b(otp|password|passcode)\b|парол\w*|\bparol\w*"

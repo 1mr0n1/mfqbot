@@ -93,16 +93,27 @@ ADMIT_RE = re.compile(r"\b(я|да,?|ну\s+да,?|i'?m|i\s+am|yes,?|yeah,?|men)
                       r"|\bnot\s+a\s+(robot|bot|program)\b", re.I)
 PRESSING_RE = re.compile(r"^\W*(ну\W*)?(ответь(\s+честно|\s+нормально)?|отвечай|честно|докажи\w*|колись|признай\w*|признава\w*|скажи(\s+честно|\s+правду)?|"
                          r"а?\s*кто\s+(пишет|отвечает|печатает|это\s+пишет)|fr(\s+tho)?|for\s+real|be\s+honest|answer(\s+me)?|prove\s+it|"
-                         r"who('?s|\s+is)\s+(typing|writing|answering|this)|rostini\s+ayt|ayt)\W*$", re.I)
+                         r"who('?s|\s+is)\s+(typing|writing|answering|this)|rostini\s+ayt|ayt|и|ну|\d\s+или\s+\d|да\s+или\s+нет|"
+                         r"yes\s+or\s+no|do\s+it|ну\s+скажи|скажи|say\s+it)\W*$", re.I)
 
 
 identity_ignored: dict[int, int] = {}   # chat_id -> newest message id of an identity question that was ignored
 
 
+# attempts to get at the instructions, or to make the account say what it is in so many words
+PROBE_RE = re.compile(
+    r"system\s+prompt|your\s+(instructions|prompt|rules)|ignore\s+(all\s+)?(previous|prior|above)|forget\s+(all\s+)?(previous|your)|"
+    r"language\s+model|what\s+model\s+are\s+you|"
+    r"систем\w+\s+промпт|тво[йи]\s+(промпт|инструкци\w+)|забудь\s+(все\s+)?(правила|инструкци\w+|предыдущ\w+)|игнорируй\s+(все\s+)?(правила|инструкци\w+|предыдущ\w+)|"
+    r"какая\s+у\s+тебя\s+модель|сколько\s+токенов|"
+    r"(скажи|напиши|повтори|переведи|say|type|write|repeat|translate)\b.{0,40}\b(бот|bot|ии|ai|нейросеть|language\s+model)\b|"
+    r"если\s+ты\s+(бот|человек|ии)|if\s+(you|u)\s+(are|r)\s+(a\s+)?(bot|human|ai)", re.I)
+
+
 def is_identity_question(sentence: str, about_media: bool = False) -> bool:
     """about_media: a photo or video was just sent in the chat — then "who is this?" asks about the picture."""
     if (BOT_QUESTION_RE.search(sentence) and ADDRESSED_RE.search(sentence)) or WHO_RE.search(sentence) \
-            or (WHO_ALONE_RE.match(sentence) and not about_media):
+            or (WHO_ALONE_RE.match(sentence) and not about_media) or PROBE_RE.search(sentence):
         return True
     # "ты точно <имя>?", "is this really <name>?" — the same question with your name in it
     return bool(app.me and "?" in sentence and REALLY_RE.search(sentence) and name_re().search(sentence))
